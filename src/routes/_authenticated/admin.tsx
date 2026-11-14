@@ -184,7 +184,7 @@ function AdminWorkspace() {
   const { data: approvalData } = useQuery({
     queryKey: ["withdrawal-approval-requests"],
     queryFn: () => listApprovals(),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
   const pendingWithdrawalCount = approvalData?.requests?.length ?? 0;
 
@@ -404,7 +404,7 @@ function AdminDepositsTab() {
   const { data: rows = [], isLoading, isError, error } = useQuery({
     queryKey: ["admin-deposits", method, dateFilter],
     queryFn: () => list({ data: { method, ...dates } }),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
   const approveMut = useMutation({
     mutationFn: (id: string) => approve({ data: { transaction_id: id } }),
@@ -429,7 +429,7 @@ function AdminDepositsTab() {
       <AdminTableShell title={method === "crypto" ? "Crypto deposits" : "M-Pesa deposits"}>
         {isLoading && <div className="p-8 text-center text-[#315c72]">Loading deposits…</div>}
         {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load deposits: {error instanceof Error ? error.message : "Please retry"}</div>}
-        {!isLoading && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found for this date.</div>}
+        {!isLoading && !isError && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found for this date.</div>}
         {rows.map((row) => {
           const status = String(row.status).toLowerCase();
           const pending = !["completed", "success", "successful", "cancelled", "failed"].includes(status);
@@ -461,7 +461,7 @@ function AdminWithdrawalsTab() {
   const { data: rows = [], isLoading, isError, error } = useQuery({
     queryKey: ["admin-withdrawals", dateFilter],
     queryFn: () => list({ data: dates }),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });

@@ -1128,13 +1128,16 @@ export const listAdminDeposits = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // TanStack GET function payloads can arrive without optional fields during
+    // a cold navigation. Never pass an undefined string into the Postgres enum.
+    const selectedMethod = data?.method === "crypto" ? "crypto" : "mpesa";
     let query = supabaseAdmin
       .from("transactions")
       .select("id,user_id,amount,amount_usd,currency,status,method,meta,created_at")
       .eq("kind", "deposit")
       .eq("account_type", "real")
       .order("created_at", { ascending: false })
-      .eq("method", data.method)
+      .eq("method", selectedMethod)
       .limit(1000);
     if (data.start_date) query = query.gte("created_at", nairobiBoundaryUtc(data.start_date, false));
     if (data.end_date) query = query.lt("created_at", nairobiBoundaryUtc(data.end_date, true));
