@@ -56,10 +56,14 @@ function AuthedLayout() {
   const [lastUnread, setLastUnread] = useState(0);
   const [isFullWidth, setIsFullWidth] = useState(false);
   const location = useLocation();
+  const isAdminConsole = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const unreadSupport = useServerFn(getAdminSupportUnreadCount);
   const releaseStale = useServerFn(releaseStaleBinaryTrades);
 
   useEffect(() => {
+    // This cleanup is for active client trading sessions; repeatedly invoking it
+    // from the admin console adds needless database work while staff are there.
+    if (isAdminConsole) return;
     let cancelled = false;
     (async () => {
       const { data: user } = await supabase.auth.getUser();
@@ -103,14 +107,13 @@ function AuthedLayout() {
     }
 
     releaseExpiredBinaryTrades();
-    const id = window.setInterval(releaseExpiredBinaryTrades, 5000);
+    const id = window.setInterval(releaseExpiredBinaryTrades, 30000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [releaseStale, qc]);
+  }, [isAdminConsole, releaseStale, qc]);
 
-  const isAdminConsole = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const isPositionsPage =
     location.pathname === "/positions" || location.pathname.startsWith("/positions/");
 

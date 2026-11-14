@@ -364,6 +364,32 @@ function filterAdminRowsByDate<T extends { created_at: string }>(rows: T[], filt
   });
 }
 
+const ADMIN_PAGE_SIZE = 50;
+
+function AdminPagination({
+  page,
+  total,
+  onPageChange,
+}: {
+  page: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (total <= ADMIN_PAGE_SIZE) return null;
+  const pageCount = Math.ceil(total / ADMIN_PAGE_SIZE);
+  const first = page * ADMIN_PAGE_SIZE + 1;
+  const last = Math.min((page + 1) * ADMIN_PAGE_SIZE, total);
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-[#c5e4e8] px-4 py-3 text-xs text-[#315c72]">
+      <span>Showing {first}–{last} of {total}</span>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => onPageChange(page - 1)} disabled={page === 0} className="rounded-full border border-[#afdbe3] px-3 py-1.5 font-semibold disabled:opacity-40">Previous</button>
+        <button type="button" onClick={() => onPageChange(page + 1)} disabled={page + 1 >= pageCount} className="rounded-full border border-[#afdbe3] px-3 py-1.5 font-semibold disabled:opacity-40">Next</button>
+      </div>
+    </div>
+  );
+}
+
 function useAdminDateFilter() {
   return useState<AdminDateFilter>(() => {
     const today = getNairobiToday();
@@ -414,6 +440,7 @@ function AdminDepositsTab() {
   const qc = useQueryClient();
   const [method, setMethod] = useState<"mpesa" | "crypto">("mpesa");
   const [dateFilter, setDateFilter] = useAdminDateFilter();
+  const [page, setPage] = useState(0);
   const dates = dateFilter.mode === "all" ? {} : { start_date: dateFilter.start || undefined, end_date: dateFilter.end || undefined };
   const { data: rows = [], isLoading, isError, error } = useQuery({
     queryKey: ["admin-deposits", method, dateFilter],
@@ -421,6 +448,8 @@ function AdminDepositsTab() {
     refetchInterval: 30000,
   });
   const visibleRows = filterAdminRowsByDate(rows, dateFilter);
+  const pageRows = visibleRows.slice(page * ADMIN_PAGE_SIZE, (page + 1) * ADMIN_PAGE_SIZE);
+  useEffect(() => setPage(0), [method, dateFilter]);
   const approveMut = useMutation({
     mutationFn: (id: string) => approve({ data: { transaction_id: id } }),
     onSuccess: () => { toast.success("Deposit approved and credited"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); },
@@ -445,7 +474,7 @@ function AdminDepositsTab() {
         {isLoading && <div className="p-8 text-center text-[#315c72]">Loading deposits…</div>}
         {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load deposits: {error instanceof Error ? error.message : "Please retry"}</div>}
         {!isLoading && !isError && visibleRows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found for this date.</div>}
-        {visibleRows.map((row) => {
+        {pageRows.map((row) => {
           const status = String(row.status).toLowerCase();
           const pending = !["completed", "success", "successful", "cancelled", "failed"].includes(status);
           const receiptUrl = typeof row.receipt_url === "string" ? row.receipt_url : null;
@@ -457,6 +486,7 @@ function AdminDepositsTab() {
             <div className="flex gap-2">{pending ? <><button onClick={() => approveMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#b9f0df] px-4 py-2 text-sm font-semibold text-[#00a968]">Approve</button><button onClick={() => rejectMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#f8d9dc] px-4 py-2 text-sm font-semibold text-[#e52e3b]">Reject</button></> : <span className="text-sm text-[#315c72]">Reviewed</span>}</div>
           </div>;
         })}
+        <AdminPagination page={page} total={visibleRows.length} onPageChange={setPage} />
       </AdminTableShell>
     </div>
   );
@@ -472,6 +502,7 @@ function AdminWithdrawalsTab() {
   const completeCrypto = useServerFn(completeCryptoWithdrawal);
   const qc = useQueryClient();
   const [dateFilter, setDateFilter] = useAdminDateFilter();
+  const [page, setPage] = useState(0);
   const dates = dateFilter.mode === "all" ? {} : { start_date: dateFilter.start || undefined, end_date: dateFilter.end || undefined };
   const { data: rows = [], isLoading, isError, error } = useQuery({
     queryKey: ["admin-withdrawals", dateFilter],
@@ -479,6 +510,8 @@ function AdminWithdrawalsTab() {
     refetchInterval: 30000,
   });
   const visibleRows = filterAdminRowsByDate(rows, dateFilter);
+  const pageRows = visibleRows.slice(page * ADMIN_PAGE_SIZE, (page + 1) * ADMIN_PAGE_SIZE);
+  useEffect(() => setPage(0), [dateFilter]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
     qc.invalidateQueries({ queryKey: ["accounts-report"] });
@@ -502,7 +535,7 @@ function AdminWithdrawalsTab() {
       {isLoading && <div className="p-8 text-center text-[#315c72]">Loading withdrawals…</div>}
       {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load withdrawals: {error instanceof Error ? error.message : "Please retry"}</div>}
       {!isLoading && !isError && visibleRows.length === 0 && <div className="p-8 text-center text-[#315c72]">No withdrawals found for this date.</div>}
-      {visibleRows.map((row) => {
+      {pageRows.map((row) => {
         const status = String(row.status).toLowerCase();
         const crypto = row.method === "crypto";
         const active = status === "pending";
@@ -522,6 +555,7 @@ function AdminWithdrawalsTab() {
           </div>
         </div>;
       })}
+      <AdminPagination page={page} total={visibleRows.length} onPageChange={setPage} />
     </AdminTableShell>
   </div>;
 }
@@ -1983,6 +2017,7 @@ function TradesTab() {
   const [moduleFilter, setModuleFilter] = useState<string | undefined>(undefined);
   const [accountFilter, setAccountFilter] = useState<"all" | "real" | "demo">("all");
   const [dateFilter, setDateFilter] = useAdminDateFilter();
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     let q = supabase
@@ -1996,6 +2031,9 @@ function TradesTab() {
     if (dateFilter.mode !== "all" && dateFilter.end) q = q.lt("created_at", nairobiDateBoundary(dateFilter.end, true));
     q.then(({ data }) => setTrades((data ?? []) as Trade[]));
   }, [moduleFilter, accountFilter, dateFilter]);
+
+  useEffect(() => setPage(0), [moduleFilter, accountFilter, dateFilter]);
+  const pageTrades = trades.slice(page * ADMIN_PAGE_SIZE, (page + 1) * ADMIN_PAGE_SIZE);
 
   const houseRetained = trades.reduce((s, t) => {
     if (t.status === "won") return s - (Number(t.payout) - Number(t.stake));
@@ -2044,7 +2082,7 @@ function TradesTab() {
       <AdminDateRangePicker value={dateFilter} onChange={setDateFilter} />
 
       <div className="bg-card border border-border rounded-xl divide-y divide-border">
-        {trades.map((t) => (
+        {pageTrades.map((t) => (
           <div key={t.id} className="flex items-center justify-between p-2.5 text-sm">
             <div className="min-w-0 flex-1">
               <div className="font-semibold text-xs">
@@ -2072,6 +2110,7 @@ function TradesTab() {
             </div>
           </div>
         ))}
+        <AdminPagination page={page} total={trades.length} onPageChange={setPage} />
         {trades.length === 0 && (
           <div className="p-6 text-center text-sm text-muted-foreground">No trades match.</div>
         )}
