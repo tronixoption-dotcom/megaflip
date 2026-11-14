@@ -302,6 +302,11 @@ export async function writeSystemSettings(
     ? await supabaseAdmin.from("system_settings").insert(fullPayload)
     : await supabaseAdmin.from("system_settings").upsert(fullPayload);
   if (error && isMissingColumnError(error)) {
+    if (nextSettings.crypto_deposit_address || nextSettings.crypto_deposit_instructions) {
+      throw new Error(
+        "Crypto wallet settings were not saved. Apply the crypto deposits Supabase migration, then save the wallet address again.",
+      );
+    }
     const fallback = initialize
       ? await supabaseAdmin.from("system_settings").insert(basePayload)
       : await supabaseAdmin.from("system_settings").upsert(basePayload);
