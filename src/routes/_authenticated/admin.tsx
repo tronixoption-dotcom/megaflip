@@ -342,12 +342,26 @@ function AdminTableShell({ title, children }: { title: string; children: React.R
 type AdminDateFilter = { mode: "today" | "all" | "custom"; start: string; end: string };
 
 function getNairobiToday() {
-  return new Intl.DateTimeFormat("en-CA", {
+  return getNairobiCalendarDate(new Date());
+}
+
+function getNairobiCalendarDate(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Nairobi",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date());
+  }).formatToParts(value);
+  const part = (type: "year" | "month" | "day") => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function filterAdminRowsByDate<T extends { created_at: string }>(rows: T[], filter: AdminDateFilter) {
+  if (filter.mode === "all") return rows;
+  return rows.filter((row) => {
+    const rowDate = getNairobiCalendarDate(new Date(row.created_at));
+    return (!filter.start || rowDate >= filter.start) && (!filter.end || rowDate <= filter.end);
+  });
 }
 
 function useAdminDateFilter() {
@@ -406,6 +420,7 @@ function AdminDepositsTab() {
     queryFn: () => list({ data: { method, ...dates } }),
     refetchInterval: 30000,
   });
+  const visibleRows = filterAdminRowsByDate(rows, dateFilter);
   const approveMut = useMutation({
     mutationFn: (id: string) => approve({ data: { transaction_id: id } }),
     onSuccess: () => { toast.success("Deposit approved and credited"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); },
@@ -429,8 +444,8 @@ function AdminDepositsTab() {
       <AdminTableShell title={method === "crypto" ? "Crypto deposits" : "M-Pesa deposits"}>
         {isLoading && <div className="p-8 text-center text-[#315c72]">Loading deposits…</div>}
         {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load deposits: {error instanceof Error ? error.message : "Please retry"}</div>}
-        {!isLoading && !isError && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found for this date.</div>}
-        {rows.map((row) => {
+        {!isLoading && !isError && visibleRows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found for this date.</div>}
+        {visibleRows.map((row) => {
           const status = String(row.status).toLowerCase();
           const pending = !["completed", "success", "successful", "cancelled", "failed"].includes(status);
           const receiptUrl = typeof row.receipt_url === "string" ? row.receipt_url : null;
@@ -463,6 +478,7 @@ function AdminWithdrawalsTab() {
     queryFn: () => list({ data: dates }),
     refetchInterval: 30000,
   });
+  const visibleRows = filterAdminRowsByDate(rows, dateFilter);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
     qc.invalidateQueries({ queryKey: ["accounts-report"] });
@@ -485,8 +501,8 @@ function AdminWithdrawalsTab() {
     <AdminTableShell title="Withdrawals">
       {isLoading && <div className="p-8 text-center text-[#315c72]">Loading withdrawals…</div>}
       {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load withdrawals: {error instanceof Error ? error.message : "Please retry"}</div>}
-      {!isLoading && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No withdrawals found for this date.</div>}
-      {rows.map((row) => {
+      {!isLoading && !isError && visibleRows.length === 0 && <div className="p-8 text-center text-[#315c72]">No withdrawals found for this date.</div>}
+      {visibleRows.map((row) => {
         const status = String(row.status).toLowerCase();
         const crypto = row.method === "crypto";
         const active = status === "pending";
