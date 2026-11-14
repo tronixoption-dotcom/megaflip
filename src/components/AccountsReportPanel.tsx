@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { CalendarDays, DollarSign, Search, TrendingUp, Users, Wallet } from "lucide-react";
-import { getAccountsReport } from "@/lib/admin.functions";
+import { getAccountsReport, getHouseBalanceHistory } from "@/lib/admin.functions";
 import { formatAdminMoney, useAdminCurrency } from "@/components/AdminCurrency";
 
 type Scope = "admin" | "agent";
@@ -32,6 +32,7 @@ export function AccountsReportPanel({
   onNavigateToClients?: () => void;
 }) {
   const reportFn = useServerFn(getAccountsReport);
+  const houseHistoryFn = useServerFn(getHouseBalanceHistory);
   const today = new Date().toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState(mode === "all_time" ? "" : today);
   const [endDate, setEndDate] = useState(mode === "all_time" ? "" : today);
@@ -52,6 +53,12 @@ export function AccountsReportPanel({
         },
       }),
   });
+  const { data: houseHistory } = useQuery({
+    queryKey: ["house-balance-history", "current"],
+    queryFn: () => houseHistoryFn({ data: { days: 1 } }),
+    enabled: presentation === "dashboard" && scope === "admin",
+    refetchInterval: 60000,
+  });
 
   const clients = (data?.clients ?? []) as ClientOption[];
   const rows = useMemo(() => {
@@ -68,10 +75,9 @@ export function AccountsReportPanel({
 
   const summary = data?.summary;
   const money = (value: unknown) => formatAdminMoney(value, currency);
-  const houseBalance =
-    Number(summary?.deposits_usd ?? 0) +
-    Number(summary?.fees_usd ?? 0) -
-    Number(summary?.withdrawals_usd ?? 0);
+  const houseBalance = presentation === "dashboard" && scope === "admin"
+    ? Number(houseHistory?.rows?.[0]?.closing_balance_usd ?? 0)
+    : Number(summary?.deposits_usd ?? 0) + Number(summary?.fees_usd ?? 0) - Number(summary?.withdrawals_usd ?? 0);
   const liability = Number(summary?.user_balances_usd ?? 0);
   const coverage = liability > 0 ? Math.max(0, Math.min(100, (houseBalance / liability) * 100)) : 0;
 
@@ -79,7 +85,7 @@ export function AccountsReportPanel({
     return (
       <div className="space-y-6">
         <DashboardGroup title="House">
-          <DashboardCard label="House balance" value={money(houseBalance)} tone="gold" note="Deposits + fees - withdrawals paid" />
+          <DashboardCard label="House balance" value={money(houseBalance)} tone="gold" note="Today only · resets at Nairobi midnight" />
           <DashboardCard label="Coverage ratio" value={`${coverage.toFixed(1)}%`} tone="gold" note="House cash vs total client balances" />
           <DashboardCard
             label="Client balances"

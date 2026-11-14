@@ -28,6 +28,7 @@ import {
   Network,
   Settings2,
   Upload,
+  History,
 } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -53,6 +54,7 @@ import {
   listAdminWithdrawals,
   rejectAdminWithdrawal,
   getAccountsReport,
+  getHouseBalanceHistory,
   moderateClientAccount,
   promoteUserRole,
   reconcileSuccessfulB2cCallbacks,
@@ -85,7 +87,7 @@ import { AdminCurrencyProvider, formatAdminMoney, useAdminCurrency } from "@/com
 import { verifyAdminSetupPassword } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  head: () => ({ meta: [{ title: "Admin — Tronix Option" }] }),
+  head: () => ({ meta: [{ title: "Admin — MEGAFLIP" }] }),
   beforeLoad: async () => {
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) throw redirect({ to: "/auth" });
@@ -170,6 +172,7 @@ function AdminWorkspace() {
     | "settings"
     | "ledger"
     | "admins"
+    | "house-history"
   >("accounts");
   const repairWithdrawals = useServerFn(failStaleMpesaWithdrawals);
   const reconcileB2c = useServerFn(reconcileSuccessfulB2cCallbacks);
@@ -224,6 +227,7 @@ function AdminWorkspace() {
     ["support", "Support", Headset, "support"],
     ["trades", "Trades", SlidersHorizontal, "trades"],
     ["admins", "Admin access", Shield, "admin-access"],
+    ["house-history", "In-house history", History, "house-history"],
   ] as const;
   return (
     <div className={`admin-console ${theme} min-h-[100dvh] bg-[#effcfc] text-[#0b1930] lg:flex`}>
@@ -269,10 +273,34 @@ function AdminWorkspace() {
           {tab === "settings" && <SettingsTab />}
           {tab === "ledger" && <TreasuryDashboard />}
           {tab === "admins" && <HiddenAdminVault page="tools" onPageChange={() => undefined} />}
+          {tab === "house-history" && <HouseBalanceHistoryTab />}
         </div>
       </main>
     </div>
   );
+}
+
+function HouseBalanceHistoryTab() {
+  const { currency } = useAdminCurrency();
+  const history = useServerFn(getHouseBalanceHistory);
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["house-balance-history", "admin"],
+    queryFn: () => history({ data: { days: 90 } }),
+    refetchInterval: 60000,
+  });
+  const money = (value: unknown) => formatAdminMoney(value, currency);
+  return <div className="space-y-5">
+    <div className="rounded-[28px] border border-[#afdbe3] bg-white/55 p-5 shadow-[0_14px_30px_rgba(35,79,92,0.08)]">
+      <h2 className="text-lg font-bold">Previous in-house balances</h2>
+      <p className="mt-1 text-sm text-[#315c72]">Each row closes at Nairobi midnight. Today starts from zero automatically.</p>
+    </div>
+    <div className="overflow-hidden rounded-[28px] border border-[#afdbe3] bg-white/55 shadow-[0_14px_30px_rgba(35,79,92,0.08)]">
+      <div className="grid grid-cols-5 gap-4 border-b border-[#c5e4e8] bg-white/35 px-5 py-4 text-xs font-bold uppercase tracking-wide text-[#315c72]"><span>Date</span><span>Deposits</span><span>Fees</span><span>Withdrawals</span><span>Closed at</span></div>
+      {isLoading && <div className="p-8 text-center text-[#315c72]">Loading history…</div>}
+      {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load in-house history.</div>}
+      {!isLoading && !isError && (data?.rows ?? []).slice().reverse().map((row) => <div key={row.date} className="grid grid-cols-5 gap-4 border-b border-[#c5e4e8] px-5 py-4 text-sm last:border-0"><span className="font-semibold">{row.date}{row.date === data?.current_date ? " (today)" : ""}</span><span>{money(row.deposits_usd)}</span><span>{money(row.fees_usd)}</span><span>{money(row.withdrawals_usd)}</span><span className="font-bold text-[#f1bd1b]">{money(row.closing_balance_usd)}</span></div>)}
+    </div>
+  </div>;
 }
 
 function TreasuryDashboard() {

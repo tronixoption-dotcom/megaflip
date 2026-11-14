@@ -921,6 +921,114 @@ export const getAccountsReport = createServerFn({ method: "POST" })
     };
   });
 
+/**
+ * Daily in-house balance history. The day boundary is Africa/Nairobi midnight.
+ * Keeping this derived from completed transactions means the balance rolls over
+ * automatically at midnight without a browser tab or a scheduled worker.
+ */
+export const getHouseBalanceHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({ days: z.number().int().min(1).max(365).default(31) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const now = new Date();
+    const today = nairobiDate(now);
+    const dates = Array.from({ length: data.days }, (_, index) =>
+      addCalendarDays(today, -(data.days - 1 - index)),
+    );
+    const from = nairobiBoundaryUtc(dates[0], false);
+    const to = nairobiBoundaryUtc(addCalendarDays(today, 1), false);
+
+    const { data: transactions, error } = await supabaseAdmin
+      .from("transactions")
+      .select("kind,amount_usd,status,meta,currency,created_at,account_type")
+      .eq("account_type", "real")
+      .gte("created_at", from)
+      .lt("created_at", to)
+      .order("created_at", { ascending: true })
+      .limit(20000);
+    if (error) throw new Error(error.message);
+    const { data: adjustments, error: adjustmentsError } = await supabaseAdmin
+      .from("account_metric_adjustments")
+      .select("deposits_usd,withdrawals_usd,created_at")
+      .gte("created_at", from)
+      .lt("created_at", to);
+    if (adjustmentsError) throw new Error(adjustmentsError.message);
+
+    const rows = new Map(
+      dates.map((date) => [
+        date,
+        { date, deposits_usd: 0, fees_usd: 0, withdrawals_usd: 0, closing_balance_usd: 0 },
+      ]),
+    );
+    const dailyTransactions = (transactions ?? []) as Array<{
+      kind: string;
+      amount_usd?: number | string | null;
+      status: string;
+      meta?: Record<string, unknown> | null;
+      currency?: string | null;
+      created_at: string;
+    }>;
+    for (const transaction of dailyTransactions) {
+      const status = String(transaction.status ?? "").trim().toLowerCase();
+      const kind = String(transaction.kind ?? "").trim().toLowerCase();
+      const countedDeposit = kind === "deposit" && isSuccessfulDepositStatus(status);
+      const countedWithdrawal = kind === "withdraw" && isPaidWithdrawalStatus(status);
+      if (!countedDeposit && !countedWithdrawal) continue;
+      const row = rows.get(nairobiDate(new Date(transaction.created_at)));
+      if (!row) continue;
+      const amount = Number(transaction.amount_usd ?? 0);
+      const feeRaw = Number((transaction.meta as Record<string, unknown> | null)?.fee_amount ?? 0);
+      const fee = Number.isFinite(feeRaw) && feeRaw > 0
+        ? transaction.currency === "KSH" ? feeRaw / 130 : feeRaw
+        : 0;
+      if (countedDeposit) row.deposits_usd += amount;
+      if (countedWithdrawal) row.withdrawals_usd += amount;
+      row.fees_usd += fee;
+    }
+    for (const adjustment of adjustments ?? []) {
+      const row = rows.get(nairobiDate(new Date(adjustment.created_at)));
+      if (!row) continue;
+      row.deposits_usd += Number(adjustment.deposits_usd ?? 0);
+      row.withdrawals_usd += Number(adjustment.withdrawals_usd ?? 0);
+    }
+    for (const row of rows.values()) {
+      row.closing_balance_usd = row.deposits_usd + row.fees_usd - row.withdrawals_usd;
+    }
+    return { rows: Array.from(rows.values()), current_date: today };
+  });
+
+function isSuccessfulDepositStatus(status: string) {
+  return ["completed", "success", "successful", "paid"].includes(status);
+}
+
+function isPaidWithdrawalStatus(status: string) {
+  return ["completed", "paid", "success", "successful"].includes(status);
+}
+
+function nairobiDate(value: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
+function addCalendarDays(date: string, amount: number) {
+  const value = new Date(`${date}T12:00:00+03:00`);
+  value.setUTCDate(value.getUTCDate() + amount);
+  return nairobiDate(value);
+}
+
+function nairobiBoundaryUtc(date: string, nextDay: boolean) {
+  const day = nextDay ? addCalendarDays(date, 1) : date;
+  return new Date(`${day}T00:00:00+03:00`).toISOString();
+}
+
 function transactionFee(transaction: ReportTransaction) {
   const raw = Number(transaction.meta?.fee_amount ?? 0);
   if (Number.isFinite(raw) && raw > 0) {

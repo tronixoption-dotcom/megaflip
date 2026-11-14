@@ -448,8 +448,8 @@ async function sendStkPush(transaction: WalletTransaction, phone?: string) {
     PartyB: env.stkShortcode,
     PhoneNumber: msisdn,
     CallBackURL: env.stkCallbackUrl,
-    AccountReference: `TRONIXOPTION-${transaction.id.slice(0, 8)}`,
-    TransactionDesc: "Tronix Option deposit",
+    AccountReference: `MEGAFLIP-${transaction.id.slice(0, 8)}`,
+    TransactionDesc: "MEGAFLIP deposit",
   };
 
   const response = await darajaRequest("/mpesa/stkpush/v1/processrequest", payload, "stk");
@@ -504,10 +504,10 @@ async function sendB2cPayment(
     Amount: Math.round(Number(payoutAmount ?? transaction.amount)),
     PartyA: env.b2cShortcode,
     PartyB: msisdn,
-    Remarks: "Tronix Option withdrawal",
+    Remarks: "MEGAFLIP withdrawal",
     QueueTimeOutURL: env.b2cTimeoutUrl,
     ResultURL: env.b2cResultUrl,
-    Occasion: `TRONIXOPTION-${transaction.id.slice(0, 8)}`,
+    Occasion: `MEGAFLIP-${transaction.id.slice(0, 8)}`,
   };
 
   const response = await darajaRequest("/mpesa/b2c/v1/paymentrequest", payload, "b2c");

@@ -29,7 +29,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetHeader } from "@/co
 import { supabase } from "@/integrations/supabase/client";
 import { applyTheme, getInitialTheme, type Theme } from "@/lib/theme";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
-import { APP_NAME, LOGO_URL } from "@/lib/brand";
+import { LOGO_URL } from "@/lib/brand";
 
 export function AppHeader() {
   const fetchProfile = useServerFn(getMyProfile);
@@ -105,8 +105,8 @@ export function AppHeader() {
         <SheetContent side="left" className="w-72 bg-background border-border p-0">
           <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
             <SheetTitle className="flex items-center gap-2">
-              <img src={LOGO_URL} alt={APP_NAME} className="h-8 w-8 object-contain" />
-              <span className="text-base font-extrabold tracking-tight">{APP_NAME}</span>
+              <img src={LOGO_URL} alt="Megaflip" className="h-8 w-8 object-contain" />
+              <span className="text-base font-extrabold tracking-tight">MEGAFLIP</span>
             </SheetTitle>
           </SheetHeader>
           <nav className="p-2">
@@ -174,10 +174,10 @@ export function AppHeader() {
       <Link to="/binary" className="flex items-center gap-1.5 shrink-0">
         <img
           src={LOGO_URL}
-          alt={APP_NAME}
+          alt="Megaflip"
           className="h-9 w-9 rounded-xl object-contain bg-primary/10 p-1 drop-shadow-[0_0_10px_color-mix(in_oklab,var(--gold)_55%,transparent)]"
         />
-        <span className="hidden sm:inline text-xs font-extrabold tracking-wider">{APP_NAME}</span>
+        <span className="hidden sm:inline text-xs font-extrabold tracking-wider">MEGAFLIP</span>
       </Link>
 
       <Link
@@ -207,7 +207,7 @@ export function AppHeader() {
           <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-[10px] font-black text-primary-foreground">
             MF
           </span>
-          Tronix Option Trader
+          Megaflip Trader
         </span>
         <ChevronDown className="h-4 w-4 text-muted-foreground" />
       </button>

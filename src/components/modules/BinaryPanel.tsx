@@ -79,7 +79,6 @@ type TickOutcome = { tickIndex: number; digit: number; won: boolean; final: bool
 
 type LoadedAutoBot = {
   source: "builder" | "scanner";
-  autotrade: boolean;
   label: string;
   market: MarketId;
   contractType: ContractType;
@@ -87,9 +86,6 @@ type LoadedAutoBot = {
   digit: number | null;
   stake: string;
   ticks: number;
-  targetProfit: string;
-  targetLoss: string;
-  lossMultiple: string;
 };
 
 export function BinaryPanel() {
@@ -217,16 +213,13 @@ export function BinaryPanel() {
     if (!loaded) return;
 
     setAutoBot(loaded);
-    setAutoTrading(loaded.autotrade);
-    setMode(loaded.autotrade ? "auto" : "manual");
+    setAutoTrading(true);
+    setMode("auto");
     setMarketId(loaded.market);
     setContractType(loaded.contractType);
     setDirection(loaded.direction);
     setStake(loaded.stake);
     setTicks(loaded.ticks);
-    setTargetProfit(loaded.targetProfit);
-    setTargetLoss(loaded.targetLoss);
-    setLossMultiple(loaded.lossMultiple);
     if (loaded.digit != null) setDigit(loaded.digit);
     toast.success(`${loaded.source === "scanner" ? "AI scanner" : "Bot"} loaded for auto trading`);
   }, []);
@@ -286,27 +279,6 @@ export function BinaryPanel() {
   const mult = payoutMultiplier(contractType, direction, contract.needsDigit ? digit : null);
   const stakeCents = Math.max(0, Math.round(parseFloat(stake || "0") * 100));
   const potentialPayoutCents = Math.floor(stakeCents * mult);
-
-  useEffect(() => {
-    if (!autoTrading || pendingTrade || openTrades.length > 0) return;
-
-    const profitTargetCents = dollarsToCents(targetProfit);
-    const lossTargetCents = dollarsToCents(targetLoss);
-    const hitProfitTarget = profitTargetCents > 0 && sessionPL >= profitTargetCents;
-    const hitLossTarget = lossTargetCents > 0 && sessionPL <= -lossTargetCents;
-
-    if (!hitProfitTarget && !hitLossTarget) return;
-
-    setAutoTrading(false);
-    setAutoBot(null);
-    setMode("manual");
-    window.sessionStorage.removeItem("tronix-option-scanner-bot");
-    toast.success(
-      hitProfitTarget
-        ? "Auto trading stopped: take profit reached"
-        : "Auto trading stopped: stop loss reached",
-    );
-  }, [autoTrading, pendingTrade, openTrades.length, sessionPL, targetProfit, targetLoss]);
 
   useEffect(() => {
     if (!pendingTrade) return;
@@ -502,7 +474,7 @@ export function BinaryPanel() {
     setAutoTrading(false);
     setAutoBot(null);
     setMode("manual");
-    window.sessionStorage.removeItem("tronix-option-scanner-bot");
+    window.sessionStorage.removeItem("megaflip-scanner-bot");
 
     const cancelIds = new Set<string>(openTrades.map((trade: any) => trade.id).filter(Boolean));
     if (pendingTrade?.id) cancelIds.add(pendingTrade.id);
@@ -849,19 +821,14 @@ export function BinaryPanel() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 font-extrabold">
                     <span className="live-dot" />
-                    {autoBot.source === "scanner"
-                      ? autoBot.autotrade
-                        ? "AI position loaded"
-                        : "AI parameters loaded"
-                      : "Bot loaded"}
+                    {autoBot.source === "scanner" ? "AI position loaded" : "Bot loaded"}
                   </div>
                   <div className="mt-1 truncate text-muted-foreground">
                     {autoBot.label} / {MARKETS[autoBot.market].label} / {autoBot.direction}
                   </div>
                   <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                    {autoBot.autotrade
-                      ? `Auto trades: ${((autoBot.ticks * MARKETS[autoBot.market].intervalMs) / 1000).toFixed(1)}s each`
-                      : "Auto trading is off — review the parameters before selecting Auto"}
+                    Auto trades:{" "}
+                    {((autoBot.ticks * MARKETS[autoBot.market].intervalMs) / 1000).toFixed(1)}s each
                   </div>
                 </div>
                 <button
@@ -946,29 +913,26 @@ function normalizePlacedTradeId(value: unknown): string | null {
 
 function readLoadedAutoBot(): LoadedAutoBot | null {
   if (typeof window === "undefined") return null;
-  const raw = window.sessionStorage.getItem("tronix-option-scanner-bot");
+  const raw = window.sessionStorage.getItem("megaflip-scanner-bot");
   if (!raw) return null;
 
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
+    if (!data.autotrade) return null;
+
     const market = mapLoadedMarket(data.market, data.volatility);
     const contractType = mapLoadedContract(data.category);
     const contract = contractFor(contractType);
     const direction = mapLoadedDirection(data.direction, contractType);
     const fallbackDirection = contract.directions[0].key as Direction;
     const source = data.source === "builder" ? "builder" : "scanner";
-    const stake = normalizeLoadedStake(data.stake);
-    const ticks = normalizeLoadedTicks(data.ticks, market);
-    const targetProfit = normalizePositiveSetting(data.targetProfit, 200);
-    const targetLoss = normalizePositiveSetting(data.targetLoss ?? data.maxLoss, 999);
-    const lossMultiple = normalizePositiveSetting(data.lossMultiple, 2);
+    const stake = Math.max(0.35, Number(data.stake ?? 10));
     const digit = Number.isFinite(Number(data.digit))
       ? Math.max(0, Math.min(9, Number(data.digit)))
       : null;
 
     return {
       source,
-      autotrade: data.autotrade === true,
       label:
         typeof data.name === "string" && data.name.trim()
           ? data.name.trim()
@@ -982,13 +946,10 @@ function readLoadedAutoBot(): LoadedAutoBot | null {
         : fallbackDirection,
       digit,
       stake: stake.toFixed(2),
-      ticks,
-      targetProfit,
-      targetLoss,
-      lossMultiple,
+      ticks: getAutoTradeTicks(market),
     };
   } catch {
-    window.sessionStorage.removeItem("tronix-option-scanner-bot");
+    window.sessionStorage.removeItem("megaflip-scanner-bot");
     return null;
   }
 }
@@ -1034,28 +995,6 @@ function getAutoTradeTicks(market: MarketId) {
   const maxTicks = Math.max(minTicks, Math.floor(4000 / interval));
   const targetTicks = Math.max(1, Math.round(3000 / interval));
   return Math.max(minTicks, Math.min(maxTicks, targetTicks));
-}
-
-function normalizeLoadedStake(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0.35 ? parsed : 10;
-}
-
-function normalizeLoadedTicks(value: unknown, market: MarketId) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return getAutoTradeTicks(market);
-  return Math.max(1, Math.min(10, Math.round(parsed)));
-}
-
-function normalizePositiveSetting(value: unknown, fallback: number) {
-  const parsed = Number(value);
-  const normalized = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  return String(normalized);
-}
-
-function dollarsToCents(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) : 0;
 }
 
 function contractWon(

@@ -29,8 +29,8 @@ waiting for navigation until "load"
   - generic [ref=e3]:
     - generic [ref=e4]:
       - generic [ref=e5]:
-        - img "Tronix Option" [ref=e6]
-        - generic [ref=e7]: Tronix Option
+        - img "MEGAFLIP" [ref=e6]
+        - generic [ref=e7]: MEGAFLIP
       - paragraph [ref=e8]: Forex · Crypto · Binaries · Polymarket · Aviator
     - generic [ref=e9]:
       - generic [ref=e10]:

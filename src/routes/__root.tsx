@@ -11,7 +11,6 @@ import { useEffect, type ReactNode } from "react";
 import { Toaster } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { FAVICON_URL } from "@/lib/brand";
-import { isDynamicImportFetchFailure, recoverDynamicImportFailure } from "@/lib/error-capture";
 
 import appCss from "../styles.css?url";
 
@@ -40,11 +39,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  const isDynamicImportFailure = isDynamicImportFetchFailure(error);
-
-  useEffect(() => {
-    if (isDynamicImportFailure) recoverDynamicImportFailure(error);
-  }, [error, isDynamicImportFailure]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -58,16 +52,12 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
-              if (isDynamicImportFailure) {
-                recoverDynamicImportFailure(error, { force: true });
-                return;
-              }
               router.invalidate();
               reset();
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            {isDynamicImportFailure ? "Hard reload" : "Try again"}
+            Try again
           </button>
           <a
             href="/"
@@ -87,18 +77,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#0f1014" },
-      { title: "Tronix Option — Premium trading workspace" },
+      { title: "MEGAFLIP — Premium trading workspace" },
       {
         name: "description",
         content:
-          "Tronix Option: Real Forex, in-house binaries, Polymarket-style predictions, Aviator, and an AI Market Scanner — one premium trading workspace.",
+          "MEGAFLIP: Real Forex, in-house binaries, Polymarket-style predictions, Aviator, and an AI Market Scanner — one premium trading workspace.",
       },
-      { name: "author", content: "Tronix Option" },
-      { property: "og:title", content: "Tronix Option — Premium trading workspace" },
+      { name: "author", content: "MEGAFLIP" },
+      { property: "og:title", content: "MEGAFLIP — Premium trading workspace" },
       {
         property: "og:description",
-        content:
-          "Trade Forex, Binaries, Predict markets, and Aviator with an AI Market Scanner on Tronix Option.",
+        content: "Trade Forex, Binaries, Predict markets, and Aviator with an AI Market Scanner.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

@@ -475,15 +475,16 @@ function MobileTradeCard({
 
       <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-xs">
         <MobileStat
-          label={isWon && pnl === 0 ? "Outcome:" : "Total profit/loss:"}
+          label="Total profit/loss:"
           value={
             <span className={color}>
-              {isWon && pnl === 0 ? "Stake returned" : `${pnl >= 0 ? "+" : ""}${formatUSD(pnl)}`}
+              {pnl >= 0 ? "+" : ""}
+              {formatUSD(pnl)}
             </span>
           }
         />
         <MobileStat
-          label="Returned:"
+          label="Contract value:"
           value={<span className={color}>{formatUSD(trade.payout_cents ?? 0)}</span>}
         />
         <MobileStat label="Stake:" value={formatUSD(trade.stake_cents)} />
