@@ -54,7 +54,7 @@ function normalizeTotalReturnMultiplier(multiplier: number) {
 
 export const placeTrade = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => PlaceTradeInput.parse(d))
+  .validator((d: unknown) => PlaceTradeInput.parse(d))
   .handler(async ({ data, context }) => {
     const settings = await readSystemSettings();
     const supabase = context.supabase as unknown as RpcClient & { from: (table: string) => any };
@@ -99,7 +99,7 @@ const SettleTradeInput = z.object({
 
 export const settleTrade = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => SettleTradeInput.parse(d))
+  .validator((d: unknown) => SettleTradeInput.parse(d))
   .handler(async ({ data, context }) => {
     const settings = await readSystemSettings();
     const supabase = context.supabase as unknown as RpcClient & { from: (table: string) => any };
@@ -958,7 +958,7 @@ async function adjustSettledPayout(
 
 export const cancelTrade = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ trade_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ trade_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: result, error } = await (context.supabase as unknown as RpcClient).rpc(
       "cancel_open_trade",
@@ -990,7 +990,7 @@ export const cancelTrade = createServerFn({ method: "POST" })
 
 export const cancelTradeDirect = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ trade_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ trade_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const cancelled = await cancelOpenTradeWithRefund(
@@ -1011,7 +1011,7 @@ export const cancelTradeDirect = createServerFn({ method: "POST" })
 
 export const closeTradeAtPrice = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ trade_id: z.string().uuid(), exit_price: z.number().positive() }).parse(d),
   )
   .handler(async ({ data, context }) => {

@@ -85,7 +85,7 @@ export const getSystemSettings = createServerFn({ method: "GET" })
 
 export const updateSystemSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => SystemSettingsInput.parse(d))
+  .validator((d: unknown) => SystemSettingsInput.parse(d))
   .handler(async ({ data, context }) => {
     await ensureAdmin(context.userId);
     const nextSettings = await writeSystemSettings(data);

@@ -143,7 +143,7 @@ function sumAdjustments(rows: Array<Record<string, unknown>>) {
 
 export const createAgent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         email: z.string().email(),
@@ -200,7 +200,7 @@ export const createAgent = createServerFn({ method: "POST" })
 
 export const creditAgentVirtual = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         agent_user_id: z.string().uuid(),
@@ -243,7 +243,7 @@ export const creditAgentVirtual = createServerFn({ method: "POST" })
 
 export const adjustAgentBalance = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         agent_user_id: z.string().uuid(),
@@ -337,7 +337,7 @@ export const listAgents = createServerFn({ method: "GET" })
 
 export const setAgentWithdrawalsEnabled = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         agent_user_id: z.string().uuid(),
@@ -358,7 +358,7 @@ export const setAgentWithdrawalsEnabled = createServerFn({ method: "POST" })
 
 export const listClients = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         search: z.string().max(120).optional(),
@@ -396,7 +396,7 @@ export const listClients = createServerFn({ method: "GET" })
 
 export const moderateClientAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid(),
@@ -475,7 +475,7 @@ export const moderateClientAccount = createServerFn({ method: "POST" })
 
 export const promoteUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid(),
@@ -519,7 +519,7 @@ export const promoteUserRole = createServerFn({ method: "POST" })
 
 export const resetClientPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ user_id: z.string().uuid(), security_password: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -571,7 +571,7 @@ function temporaryPasswordFromPhone(phone: string) {
 
 export const demoteUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid(),
@@ -630,7 +630,7 @@ export const demoteUserRole = createServerFn({ method: "POST" })
 
 export const resetUserBalances = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid(),
@@ -674,7 +674,7 @@ export const listAccountMetricAdjustments = createServerFn({ method: "GET" })
 
 export const createAccountMetricAdjustment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         label: z.string().trim().min(2).max(120),
@@ -699,7 +699,7 @@ export const createAccountMetricAdjustment = createServerFn({ method: "POST" })
 
 export const resetAdminAccountsSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         reason: z.string().trim().min(2).max(160).default("Manual summary reset"),
@@ -720,7 +720,7 @@ export const resetAdminAccountsSummary = createServerFn({ method: "POST" })
 
 export const getAccountsReport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         scope: z.enum(["admin", "agent"]).default("agent"),
@@ -928,7 +928,7 @@ export const getAccountsReport = createServerFn({ method: "POST" })
  */
 export const getHouseBalanceHistory = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z.object({ days: z.number().int().min(1).max(365).default(31) }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1039,7 +1039,7 @@ function transactionFee(transaction: ReportTransaction) {
 
 export const failStaleMpesaWithdrawals = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         older_than_minutes: z.number().int().min(1).max(60).default(2),
@@ -1141,7 +1141,7 @@ export const listAdminDeposits = createServerFn({ method: "GET" })
 
 export const approveAdminDeposit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -1155,7 +1155,7 @@ export const approveAdminDeposit = createServerFn({ method: "POST" })
 
 export const rejectAdminDeposit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -1197,7 +1197,7 @@ export const listAdminWithdrawals = createServerFn({ method: "GET" })
 
 export const markAdminWithdrawalPaid = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     void data;
@@ -1206,7 +1206,7 @@ export const markAdminWithdrawalPaid = createServerFn({ method: "POST" })
 
 export const rejectAdminWithdrawal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -1221,7 +1221,7 @@ export const rejectAdminWithdrawal = createServerFn({ method: "POST" })
 
 export const approveWithdrawalApprovalRequest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     return releaseApprovedWithdrawalTransaction({
@@ -1232,7 +1232,7 @@ export const approveWithdrawalApprovalRequest = createServerFn({ method: "POST" 
 
 export const rejectWithdrawalApprovalRequest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         transaction_id: z.string().uuid(),
@@ -1262,7 +1262,7 @@ export const rejectWithdrawalApprovalRequest = createServerFn({ method: "POST" }
 
 export const createAdminAccount = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         email: z.string().email(),
@@ -1340,7 +1340,7 @@ export const listAuditEvents = createServerFn({ method: "GET" })
 
 export const changePassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ new_password: z.string().min(8).max(72) }).parse(d))
+  .validator((d: unknown) => z.object({ new_password: z.string().min(8).max(72) }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.auth.updateUser({ password: data.new_password });
     if (error) throw new Error(error.message);
@@ -1349,7 +1349,7 @@ export const changePassword = createServerFn({ method: "POST" })
 
 export const updateProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         full_name: z.string().trim().min(2).max(120).optional(),
@@ -1382,7 +1382,7 @@ function normalizeKenyanPhone(phone: string) {
 
 export const auditUserBalance = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid().optional(),
@@ -1404,7 +1404,7 @@ export const auditUserBalance = createServerFn({ method: "POST" })
 
 export const reconcileUserBalance = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid(),
@@ -1428,7 +1428,7 @@ export const reconcileUserBalance = createServerFn({ method: "POST" })
 
 export const reconcileAllBalances = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         max_users_to_fix: z.number().int().min(1).max(1000).default(100),
@@ -1450,7 +1450,7 @@ export const reconcileAllBalances = createServerFn({ method: "POST" })
 
 export const getBalanceAuditLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid().optional(),
@@ -1487,7 +1487,7 @@ export const getBalanceAuditLog = createServerFn({ method: "POST" })
 
 export const getUserLedgerSummary = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         user_id: z.string().uuid(),
@@ -1537,7 +1537,7 @@ export const setAutoReconciliationEnabled = createServerFn({
   method: "POST",
 })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
+  .validator((d: unknown) =>
     z
       .object({
         enabled: z.boolean(),

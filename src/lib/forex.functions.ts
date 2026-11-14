@@ -96,7 +96,7 @@ async function fetchRate(symbol: string) {
 }
 
 export const getForexQuote = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => QuoteInput.parse(d))
+  .validator((d: unknown) => QuoteInput.parse(d))
   .handler(async ({ data }) => {
     try {
       const rate = await fetchRate(data.symbol);
@@ -132,7 +132,7 @@ const CandleInput = z.object({
 });
 
 export const getForexCandles = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => CandleInput.parse(d))
+  .validator((d: unknown) => CandleInput.parse(d))
   .handler(async ({ data }) => {
     try {
       const candleRes = await fetchYahooCandles(data.symbol, data.resolution, data.count);
