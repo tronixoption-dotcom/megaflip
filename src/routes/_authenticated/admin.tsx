@@ -52,6 +52,9 @@ import {
   approveAdminDeposit,
   rejectAdminDeposit,
   listAdminWithdrawals,
+  approveCryptoWithdrawalRequest,
+  rejectCryptoWithdrawalRequest,
+  completeCryptoWithdrawal,
   rejectAdminWithdrawal,
   getAccountsReport,
   getHouseBalanceHistory,
@@ -336,28 +339,107 @@ function AdminTableShell({ title, children }: { title: string; children: React.R
   );
 }
 
+type AdminDateFilter = { mode: "today" | "all" | "custom"; start: string; end: string };
+
+function getNairobiToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function useAdminDateFilter() {
+  return useState<AdminDateFilter>(() => {
+    const today = getNairobiToday();
+    return { mode: "today", start: today, end: today };
+  });
+}
+
+function nairobiDateBoundary(date: string, nextDay = false) {
+  const value = new Date(`${date}T00:00:00+03:00`);
+  if (nextDay) value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString();
+}
+
+function AdminDateRangePicker({
+  value,
+  onChange,
+}: {
+  value: AdminDateFilter;
+  onChange: (value: AdminDateFilter) => void;
+}) {
+  const today = getNairobiToday();
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#afdbe3] bg-white/55 p-3">
+      <span className="mr-1 text-xs font-bold text-[#315c72]">Date</span>
+      {(["today", "all", "custom"] as const).map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => onChange(mode === "today" ? { mode, start: today, end: today } : mode === "all" ? { mode, start: "", end: "" } : { mode, start: today, end: today })}
+          className={`rounded-full px-3 py-1.5 text-xs font-bold ${value.mode === mode ? "bg-[#bcebf7] text-[#009fe3]" : "bg-white text-[#315c72]"}`}
+        >
+          {mode === "today" ? "Today" : mode === "all" ? "All dates" : "Date range"}
+        </button>
+      ))}
+      {value.mode === "custom" && <>
+        <label className="flex items-center gap-1 text-[10px] text-[#315c72]">From<input type="date" value={value.start} onChange={(event) => onChange({ ...value, start: event.target.value })} className="rounded-md border border-[#afdbe3] bg-white px-2 py-1 text-xs" /></label>
+        <label className="flex items-center gap-1 text-[10px] text-[#315c72]">To<input type="date" value={value.end} onChange={(event) => onChange({ ...value, end: event.target.value })} className="rounded-md border border-[#afdbe3] bg-white px-2 py-1 text-xs" /></label>
+      </>}
+    </div>
+  );
+}
+
 function AdminDepositsTab() {
   const { currency } = useAdminCurrency();
   const list = useServerFn(listAdminDeposits);
   const approve = useServerFn(approveAdminDeposit);
   const reject = useServerFn(rejectAdminDeposit);
   const qc = useQueryClient();
-  const { data: rows = [], isLoading, isError, error } = useQuery({ queryKey: ["admin-deposits"], queryFn: () => list(), refetchInterval: 10000 });
-  const approveMut = useMutation({ mutationFn: (id: string) => approve({ data: { transaction_id: id } }), onSuccess: () => { toast.success("Deposit approved"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); }, onError: (e) => toast.error(e instanceof Error ? e.message : "Deposit approval failed") });
-  const rejectMut = useMutation({ mutationFn: (id: string) => reject({ data: { transaction_id: id } }), onSuccess: () => { toast.success("Deposit rejected"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); }, onError: (e) => toast.error(e instanceof Error ? e.message : "Deposit rejection failed") });
+  const [method, setMethod] = useState<"mpesa" | "crypto">("mpesa");
+  const [dateFilter, setDateFilter] = useAdminDateFilter();
+  const dates = dateFilter.mode === "all" ? {} : { start_date: dateFilter.start || undefined, end_date: dateFilter.end || undefined };
+  const { data: rows = [], isLoading, isError, error } = useQuery({
+    queryKey: ["admin-deposits", method, dateFilter],
+    queryFn: () => list({ data: { method, ...dates } }),
+    refetchInterval: 10000,
+  });
+  const approveMut = useMutation({
+    mutationFn: (id: string) => approve({ data: { transaction_id: id } }),
+    onSuccess: () => { toast.success("Deposit approved and credited"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Deposit approval failed"),
+  });
+  const rejectMut = useMutation({
+    mutationFn: (id: string) => reject({ data: { transaction_id: id } }),
+    onSuccess: () => { toast.success("Deposit rejected"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Deposit rejection failed"),
+  });
   return (
-    <div className="space-y-5">
-      <AdminTableShell title="Deposits">
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {(["mpesa", "crypto"] as const).map((value) => (
+          <button key={value} type="button" onClick={() => setMethod(value)} className={`rounded-full px-4 py-2 text-sm font-bold ${method === value ? "bg-[#bcebf7] text-[#009fe3]" : "bg-white/60 text-[#315c72]"}`}>
+            {value === "mpesa" ? "M-Pesa deposits" : "Crypto deposits"}
+          </button>
+        ))}
+      </div>
+      <AdminDateRangePicker value={dateFilter} onChange={setDateFilter} />
+      <AdminTableShell title={method === "crypto" ? "Crypto deposits" : "M-Pesa deposits"}>
         {isLoading && <div className="p-8 text-center text-[#315c72]">Loading deposits…</div>}
         {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load deposits: {error instanceof Error ? error.message : "Please retry"}</div>}
-        {!isLoading && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found.</div>}
+        {!isLoading && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No deposits found for this date.</div>}
         {rows.map((row) => {
-          const pending = !["completed", "success", "successful"].includes(String(row.status).toLowerCase());
+          const status = String(row.status).toLowerCase();
+          const pending = !["completed", "success", "successful", "cancelled", "failed"].includes(status);
+          const receiptUrl = typeof row.receipt_url === "string" ? row.receipt_url : null;
           return <div key={row.id} className="grid grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(220px,1.3fr)] items-center gap-4 border-b border-[#c5e4e8] px-5 py-4 last:border-0">
             <div><div className="font-semibold">{row.user_name}</div><div className="text-sm text-[#315c72]">{row.phone ?? row.user_id} · {new Date(row.created_at).toLocaleString()}</div></div>
-            <div className="font-medium">{formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}</div><div className="text-[#315c72]">{row.meta?.receipt ?? "—"}</div>
-            <StatusPill status={pending ? "Pending" : "Success"} />
-            <div className="flex gap-2">{pending ? <><button onClick={() => approveMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#b9f0df] px-4 py-2 text-sm font-semibold text-[#00a968]">Approve</button><button onClick={() => rejectMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#f8d9dc] px-4 py-2 text-sm font-semibold text-[#e52e3b]">Reject</button></> : <span className="text-sm text-[#315c72]">Completed</span>}</div>
+            <div className="font-medium">{formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}<div className="text-xs text-[#315c72]">KSh {Number(row.amount ?? 0).toLocaleString()}</div></div>
+            <div className="text-[#315c72]">{receiptUrl ? <a href={receiptUrl} target="_blank" rel="noreferrer" className="inline-flex flex-col items-start gap-1 text-[#009fe3]"><img src={receiptUrl} alt="Client crypto deposit receipt" className="h-16 max-w-28 rounded-md border border-[#afdbe3] object-cover" />View screenshot</a> : row.meta?.receipt ?? "No screenshot available"}</div>
+            <StatusPill status={pending ? "Pending review" : status === "completed" ? "Approved" : status === "cancelled" ? "Rejected" : status} />
+            <div className="flex gap-2">{pending ? <><button onClick={() => approveMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#b9f0df] px-4 py-2 text-sm font-semibold text-[#00a968]">Approve</button><button onClick={() => rejectMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#f8d9dc] px-4 py-2 text-sm font-semibold text-[#e52e3b]">Reject</button></> : <span className="text-sm text-[#315c72]">Reviewed</span>}</div>
           </div>;
         })}
       </AdminTableShell>
@@ -370,16 +452,62 @@ function AdminWithdrawalsTab() {
   const list = useServerFn(listAdminWithdrawals);
   const approve = useServerFn(approveWithdrawalApprovalRequest);
   const reject = useServerFn(rejectAdminWithdrawal);
+  const approveCrypto = useServerFn(approveCryptoWithdrawalRequest);
+  const rejectCrypto = useServerFn(rejectCryptoWithdrawalRequest);
+  const completeCrypto = useServerFn(completeCryptoWithdrawal);
   const qc = useQueryClient();
-  const { data: rows = [], isLoading, isError, error } = useQuery({ queryKey: ["admin-withdrawals"], queryFn: () => list(), refetchInterval: 10000 });
-  const refresh = () => { qc.invalidateQueries({ queryKey: ["admin-withdrawals"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); qc.invalidateQueries({ queryKey: ["admin-clients"] }); };
-  const action = useMutation({ mutationFn: async ({ id, type }: { id: string; type: "approve" | "reject" }) => type === "approve" ? approve({ data: { transaction_id: id } }) : reject({ data: { transaction_id: id } }), onSuccess: (_, vars) => { toast.success(vars.type === "reject" ? "Withdrawal rejected" : "Withdrawal approved; awaiting provider confirmation"); refresh(); }, onError: (e) => toast.error(e instanceof Error ? e.message : "Withdrawal action failed") });
-  return <AdminTableShell title="Withdrawals">
-    {isLoading && <div className="p-8 text-center text-[#315c72]">Loading withdrawals…</div>}
-    {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load withdrawals: {error instanceof Error ? error.message : "Please retry"}</div>}
-    {!isLoading && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No withdrawals found.</div>}
-    {rows.map((row) => { const status = String(row.status).toLowerCase(); const paidStatus = status === "completed"; const active = status === "pending"; const awaitingProvider = status === "processing"; return <div key={row.id} className="grid grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(110px,1fr)_minmax(120px,1fr)_minmax(145px,1fr)_minmax(100px,0.8fr)_minmax(235px,1.8fr)] items-center gap-4 border-b border-[#c5e4e8] px-5 py-4 text-sm last:border-0"><div><div className="font-semibold">{row.user_name}</div><div className="text-xs text-[#315c72]">{new Date(row.created_at).toLocaleString()}</div></div><div className="font-medium">{formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}</div><div className="text-[#315c72]">{formatAdminMoney(Number(row.fee ?? 0) / 130, currency)}</div><div className="font-medium">{formatAdminMoney(Number(row.payout ?? 0) / 130, currency)}</div><div className="text-xs text-[#315c72]">{row.phone ?? "—"}</div><StatusPill status={paidStatus ? "Paid" : status === "failed" ? "Failed" : awaitingProvider ? "Awaiting provider" : "Pending approval"} /><div className="flex gap-1.5">{active && <><button onClick={() => action.mutate({ id: row.id, type: "approve" })} disabled={action.isPending} className="rounded-full bg-[#bcebf7] px-3 py-1.5 text-sm font-semibold text-[#009fe3]">Approve</button><button onClick={() => action.mutate({ id: row.id, type: "reject" })} disabled={action.isPending} className="rounded-full bg-[#f8d9dc] px-3 py-1.5 text-sm font-semibold text-[#e52e3b]">Reject</button></>}{awaitingProvider && <span className="text-xs text-[#315c72]">Paid status is callback-controlled</span>}</div></div>; })}
-  </AdminTableShell>;
+  const [dateFilter, setDateFilter] = useAdminDateFilter();
+  const dates = dateFilter.mode === "all" ? {} : { start_date: dateFilter.start || undefined, end_date: dateFilter.end || undefined };
+  const { data: rows = [], isLoading, isError, error } = useQuery({
+    queryKey: ["admin-withdrawals", dateFilter],
+    queryFn: () => list({ data: dates }),
+    refetchInterval: 10000,
+  });
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
+    qc.invalidateQueries({ queryKey: ["accounts-report"] });
+    qc.invalidateQueries({ queryKey: ["admin-clients"] });
+  };
+  const action = useMutation({
+    mutationFn: async ({ id, method, type, transactionHash }: { id: string; method: string; type: "approve" | "reject" | "sent"; transactionHash?: string }) => {
+      if (method === "crypto") {
+        if (type === "approve") return approveCrypto({ data: { transaction_id: id } });
+        if (type === "reject") return rejectCrypto({ data: { transaction_id: id } });
+        return completeCrypto({ data: { transaction_id: id, transaction_hash: transactionHash } });
+      }
+      return type === "reject" ? reject({ data: { transaction_id: id } }) : approve({ data: { transaction_id: id } });
+    },
+    onSuccess: (_, vars) => { toast.success(vars.type === "reject" ? "Withdrawal rejected" : vars.type === "sent" ? "Crypto transfer marked sent" : vars.method === "crypto" ? "Crypto withdrawal approved; balance deducted" : "Withdrawal approved; awaiting provider confirmation"); refresh(); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Withdrawal action failed"),
+  });
+  return <div className="space-y-4">
+    <AdminDateRangePicker value={dateFilter} onChange={setDateFilter} />
+    <AdminTableShell title="Withdrawals">
+      {isLoading && <div className="p-8 text-center text-[#315c72]">Loading withdrawals…</div>}
+      {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load withdrawals: {error instanceof Error ? error.message : "Please retry"}</div>}
+      {!isLoading && rows.length === 0 && <div className="p-8 text-center text-[#315c72]">No withdrawals found for this date.</div>}
+      {rows.map((row) => {
+        const status = String(row.status).toLowerCase();
+        const crypto = row.method === "crypto";
+        const active = status === "pending";
+        const awaitingProvider = status === "processing";
+        const address = typeof row.meta?.crypto_destination_address === "string" ? row.meta.crypto_destination_address : null;
+        return <div key={row.id} className="grid grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(110px,1fr)_minmax(120px,1fr)_minmax(145px,1fr)_minmax(100px,0.8fr)_minmax(235px,1.8fr)] items-center gap-4 border-b border-[#c5e4e8] px-5 py-4 text-sm last:border-0">
+          <div><div className="font-semibold">{row.user_name}</div><div className="text-xs text-[#315c72]">{crypto ? "Crypto" : "M-Pesa"} · {new Date(row.created_at).toLocaleString()}</div></div>
+          <div className="font-medium">{formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}</div>
+          <div className="text-[#315c72]">{crypto ? "—" : formatAdminMoney(Number(row.fee ?? 0) / 130, currency)}</div>
+          <div className="font-medium">{formatAdminMoney(crypto ? Number(row.amount_usd ?? 0) : Number(row.payout ?? 0) / 130, currency)}</div>
+          <div className="break-all text-xs text-[#315c72]">{crypto ? address ?? "Address unavailable" : row.phone ?? "Phone unavailable"}</div>
+          <StatusPill status={status === "completed" ? crypto ? "Crypto sent" : "Paid" : status === "failed" ? "Failed" : crypto && awaitingProvider ? "Approved · transfer due" : awaitingProvider ? "Awaiting provider" : active ? "Pending approval" : "Rejected"} />
+          <div className="flex flex-wrap gap-1.5">
+            {active && <><button onClick={() => action.mutate({ id: row.id, method: row.method ?? "mpesa", type: "approve" })} disabled={action.isPending} className="rounded-full bg-[#bcebf7] px-3 py-1.5 text-sm font-semibold text-[#009fe3]">Approve</button><button onClick={() => action.mutate({ id: row.id, method: row.method ?? "mpesa", type: "reject" })} disabled={action.isPending} className="rounded-full bg-[#f8d9dc] px-3 py-1.5 text-sm font-semibold text-[#e52e3b]">Reject</button></>}
+            {crypto && awaitingProvider && <button onClick={() => { const enteredHash = window.prompt("Optional crypto transaction hash:"); if (enteredHash === null) return; action.mutate({ id: row.id, method: "crypto", type: "sent", transactionHash: enteredHash || undefined }); }} disabled={action.isPending} className="rounded-full bg-[#b9f0df] px-3 py-1.5 text-sm font-semibold text-[#00a968]">Mark sent</button>}
+            {!active && !(crypto && awaitingProvider) && <span className="text-xs text-[#315c72]">{crypto && status === "completed" ? (typeof row.meta?.transaction_hash === "string" ? `Tx: ${row.meta.transaction_hash}` : "Transfer recorded") : "?"}</span>}
+          </div>
+        </div>;
+      })}
+    </AdminTableShell>
+  </div>;
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -679,6 +807,8 @@ function SettingsTab() {
   const [engagementEnabled, setEngagementEnabled] = useState(true);
   const [engagementTriggers, setEngagementTriggers] = useState("trade,withdrawal");
   const [capsEnabled, setCapsEnabled] = useState(true);
+  const [cryptoDepositAddress, setCryptoDepositAddress] = useState("");
+  const [cryptoDepositInstructions, setCryptoDepositInstructions] = useState("");
   const [dailyLossCap, setDailyLossCap] = useState("10000");
   const [weeklyLossCap, setWeeklyLossCap] = useState("50000");
   const [monthlyLossCap, setMonthlyLossCap] = useState("100000");
@@ -715,6 +845,8 @@ function SettingsTab() {
     setDailyLossCap(String(Number(settings.caps_daily_loss_usd ?? 10000)));
     setWeeklyLossCap(String(Number(settings.caps_weekly_loss_usd ?? 50000)));
     setMonthlyLossCap(String(Number(settings.caps_monthly_loss_usd ?? 100000)));
+    setCryptoDepositAddress(settings.crypto_deposit_address ?? "");
+    setCryptoDepositInstructions(settings.crypto_deposit_instructions ?? "");
     setCoreSettingsEnabled(true);
     setLimitsEnabled(true);
     setVolatilityEnabled(true);
@@ -787,6 +919,8 @@ function SettingsTab() {
           caps_monthly_loss_usd: Number(
             capsEnabled ? monthlyLossCap || 0 : DEFAULT_SYSTEM_SETTINGS.caps_monthly_loss_usd,
           ),
+          crypto_deposit_address: cryptoDepositAddress.trim(),
+          crypto_deposit_instructions: cryptoDepositInstructions.trim(),
         },
       }),
     onSuccess: () => {
@@ -812,6 +946,32 @@ function SettingsTab() {
         <div className="text-sm text-muted-foreground">Loading settings…</div>
       ) : (
         <div className="space-y-3">
+          <div className="rounded-lg border border-border bg-surface/80 p-3 space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Crypto deposits
+            </div>
+            <LabeledInput
+              label="Deposit wallet address"
+              value={cryptoDepositAddress}
+              onChange={setCryptoDepositAddress}
+            />
+            <label className="space-y-1 block">
+              <span className="text-[9px] uppercase font-bold text-muted-foreground">
+                Accepted coin, network, or payment instructions
+              </span>
+              <textarea
+                value={cryptoDepositInstructions}
+                onChange={(event) => setCryptoDepositInstructions(event.target.value)}
+                rows={2}
+                placeholder="Example: USDT on TRC20 only"
+                className="w-full px-2 py-1.5 rounded-lg bg-surface border border-border text-sm outline-none"
+              />
+            </label>
+            <p className="text-[10px] text-muted-foreground">
+              Clients see these details before uploading proof. Only deposits approved by an admin
+              are added to their real balance.
+            </p>
+          </div>
           <div className="rounded-lg border border-border bg-surface/80 p-3 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1806,17 +1966,20 @@ function TradesTab() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [moduleFilter, setModuleFilter] = useState<string | undefined>(undefined);
   const [accountFilter, setAccountFilter] = useState<"all" | "real" | "demo">("all");
+  const [dateFilter, setDateFilter] = useAdminDateFilter();
 
   useEffect(() => {
     let q = supabase
       .from("trades")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(150);
+      .limit(1000);
     if (moduleFilter) q = q.eq("module", moduleFilter);
     if (accountFilter !== "all") q = q.eq("account_type", accountFilter);
+    if (dateFilter.mode !== "all" && dateFilter.start) q = q.gte("created_at", nairobiDateBoundary(dateFilter.start));
+    if (dateFilter.mode !== "all" && dateFilter.end) q = q.lt("created_at", nairobiDateBoundary(dateFilter.end, true));
     q.then(({ data }) => setTrades((data ?? []) as Trade[]));
-  }, [moduleFilter, accountFilter]);
+  }, [moduleFilter, accountFilter, dateFilter]);
 
   const houseRetained = trades.reduce((s, t) => {
     if (t.status === "won") return s - (Number(t.payout) - Number(t.stake));
@@ -1861,6 +2024,8 @@ function TradesTab() {
           </FilterChip>
         ))}
       </div>
+
+      <AdminDateRangePicker value={dateFilter} onChange={setDateFilter} />
 
       <div className="bg-card border border-border rounded-xl divide-y divide-border">
         {trades.map((t) => (

@@ -1116,26 +1116,46 @@ export const listWithdrawalApprovalRequests = createServerFn({ method: "GET" })
 
 export const listAdminDeposits = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .validator((d: unknown) =>
+    z
+      .object({
+        method: z.enum(["mpesa", "crypto"]).default("mpesa"),
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .default({}),
+  )
+  .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("transactions")
       .select("id,user_id,amount,amount_usd,currency,status,method,meta,created_at")
       .eq("kind", "deposit")
       .eq("account_type", "real")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .eq("method", data.method)
+      .limit(1000);
+    if (data.start_date) query = query.gte("created_at", nairobiBoundaryUtc(data.start_date, false));
+    if (data.end_date) query = query.lt("created_at", nairobiBoundaryUtc(data.end_date, true));
+    const { data: rows, error } = await query;
     if (error) throw new Error(error.message);
-    const ids = (data ?? []).map((row) => row.user_id).filter(Boolean);
+    const ids = (rows ?? []).map((row) => row.user_id).filter(Boolean);
     const { data: roles } = ids.length ? await supabaseAdmin.from("user_roles").select("user_id,role").in("user_id", ids) : { data: [] };
     const internalIds = new Set((roles ?? []).filter((role) => role.role === "admin" || role.role === "agent").map((role) => role.user_id));
     const { data: profiles } = ids.length ? await supabaseAdmin.from("profiles").select("id,email,full_name,username,phone").in("id", ids) : { data: [] };
     const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-    return (data ?? []).filter((row) => !internalIds.has(row.user_id)).map((row) => ({
+    return Promise.all((rows ?? []).filter((row) => !internalIds.has(row.user_id)).map(async (row) => {
+      const receiptPath = typeof row.meta?.crypto_receipt_path === "string" ? row.meta.crypto_receipt_path : null;
+      const { data: receipt } = receiptPath
+        ? await supabaseAdmin.storage.from("crypto-deposit-receipts").createSignedUrl(receiptPath, 3600)
+        : { data: null };
+      return {
       ...row,
+      receipt_url: receipt?.signedUrl ?? null,
       user_name: profileMap.get(row.user_id)?.full_name ?? profileMap.get(row.user_id)?.username ?? profileMap.get(row.user_id)?.email ?? "Client",
       phone: profileMap.get(row.user_id)?.phone ?? row.meta?.phone ?? null,
+      };
     }));
   });
 
@@ -1170,23 +1190,34 @@ export const rejectAdminDeposit = createServerFn({ method: "POST" })
 
 export const listAdminWithdrawals = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .validator((d: unknown) =>
+    z
+      .object({
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .default({}),
+  )
+  .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("transactions")
       .select("id,user_id,amount,amount_usd,currency,status,method,meta,created_at")
       .eq("kind", "withdraw")
       .eq("account_type", "real")
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(1000);
+    if (data.start_date) query = query.gte("created_at", nairobiBoundaryUtc(data.start_date, false));
+    if (data.end_date) query = query.lt("created_at", nairobiBoundaryUtc(data.end_date, true));
+    const { data: rows, error } = await query;
     if (error) throw new Error(error.message);
-    const ids = (data ?? []).map((row) => row.user_id).filter(Boolean);
+    const ids = (rows ?? []).map((row) => row.user_id).filter(Boolean);
     const { data: roles } = ids.length ? await supabaseAdmin.from("user_roles").select("user_id,role").in("user_id", ids) : { data: [] };
     const internalIds = new Set((roles ?? []).filter((role) => role.role === "admin" || role.role === "agent").map((role) => role.user_id));
     const { data: profiles } = ids.length ? await supabaseAdmin.from("profiles").select("id,email,full_name,username,phone").in("id", ids) : { data: [] };
     const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-    return (data ?? []).filter((row) => !internalIds.has(row.user_id)).map((row) => ({
+    return (rows ?? []).filter((row) => !internalIds.has(row.user_id)).map((row) => ({
       ...row,
       user_name: profileMap.get(row.user_id)?.full_name ?? profileMap.get(row.user_id)?.username ?? profileMap.get(row.user_id)?.email ?? "Client",
       phone: profileMap.get(row.user_id)?.phone ?? row.meta?.phone ?? null,
@@ -1215,6 +1246,50 @@ export const rejectAdminWithdrawal = createServerFn({ method: "POST" })
       _status: "cancelled",
       _meta: { rejected_by: context.userId, rejected_at: new Date().toISOString() },
     });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const approveCryptoWithdrawalRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: transaction, error } = await (supabaseAdmin as unknown as RpcAdminClient).rpc(
+      "approve_crypto_withdrawal",
+      { _transaction_id: data.transaction_id, _admin_id: context.userId },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true, transaction };
+  });
+
+export const rejectCryptoWithdrawalRequest = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => z.object({ transaction_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await (supabaseAdmin as unknown as RpcAdminClient).rpc(
+      "reject_crypto_withdrawal",
+      { _transaction_id: data.transaction_id, _admin_id: context.userId, _reason: "Rejected by admin" },
+    );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const completeCryptoWithdrawal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) =>
+    z.object({ transaction_id: z.string().uuid(), transaction_hash: z.string().trim().max(500).optional() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await (supabaseAdmin as unknown as RpcAdminClient).rpc(
+      "complete_crypto_withdrawal",
+      { _transaction_id: data.transaction_id, _admin_id: context.userId, _transaction_hash: data.transaction_hash ?? null },
+    );
     if (error) throw new Error(error.message);
     return { ok: true };
   });

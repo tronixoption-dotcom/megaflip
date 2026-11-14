@@ -13,6 +13,16 @@ const MoneyInput = z.object({
   phone: z.string().optional(),
 });
 
+const CryptoDepositInput = z.object({
+  amount_ksh: z.number().positive().max(10_000_000),
+  receipt_path: z.string().min(1).max(700),
+});
+
+const CryptoWithdrawalInput = z.object({
+  amount_ksh: z.number().positive().max(10_000_000),
+  destination_address: z.string().trim().min(8).max(500),
+});
+
 type TransactionKind = "deposit" | "withdraw";
 type PaymentRequestType = "stk_push" | "b2c";
 
@@ -70,6 +80,107 @@ export const createDeposit = createServerFn({ method: "POST" })
     }
 
     return { ok: true, transaction: tx };
+  });
+
+export const submitCryptoDeposit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => CryptoDepositInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const settings = await readSystemSettings();
+    if (!settings.crypto_deposit_address.trim()) {
+      throw new Error("Crypto deposits are not available yet. Please contact support.");
+    }
+
+    const minAmountKsh = Number(settings.min_deposit_usd ?? 3) * USD_TO_KSH;
+    if (data.amount_ksh < minAmountKsh) {
+      throw new Error(`Minimum crypto deposit is KSh ${minAmountKsh.toFixed(0)}.`);
+    }
+
+    const expectedPrefix = `${context.userId}/`;
+    if (!data.receipt_path.startsWith(expectedPrefix)) {
+      throw new Error("Invalid receipt upload path.");
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: receiptError } = await supabaseAdmin.storage
+      .from("crypto-deposit-receipts")
+      .createSignedUrl(data.receipt_path, 60);
+    if (receiptError) throw new Error("The uploaded receipt could not be verified. Please try again.");
+
+    const amountKsh = roundMoney(data.amount_ksh);
+    const { data: transaction, error } = await supabaseAdmin
+      .from("transactions")
+      .insert({
+        user_id: context.userId,
+        kind: "deposit",
+        method: "crypto",
+        account_type: "real",
+        amount: amountKsh,
+        currency: "KSH",
+        amount_usd: toUsd(amountKsh, "KSH"),
+        status: "pending",
+        is_virtual: false,
+        meta: {
+          crypto_receipt_path: data.receipt_path,
+          crypto_wallet_address: settings.crypto_deposit_address.trim(),
+          crypto_deposit_instructions: settings.crypto_deposit_instructions.trim(),
+          submitted_at: new Date().toISOString(),
+          admin_approval_required: true,
+        },
+      } as Record<string, unknown>)
+      .select("id,amount,amount_usd,currency,status,created_at")
+      .single();
+    if (error || !transaction) throw new Error(error?.message ?? "Could not submit crypto deposit.");
+
+    return { ok: true, transaction };
+  });
+
+export const submitCryptoWithdrawal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => CryptoWithdrawalInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const settings = await readSystemSettings();
+    const amountKsh = roundMoney(data.amount_ksh);
+    const amountUsd = toUsd(amountKsh, "KSH");
+    const minAmountUsd = Number(settings.min_withdrawal_usd ?? 3);
+    if (amountUsd < minAmountUsd) {
+      throw new Error(`Minimum crypto withdrawal is KSh ${(minAmountUsd * USD_TO_KSH).toFixed(0)}.`);
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .select("balance_usd")
+      .eq("id", context.userId)
+      .single();
+    if (profileError || !profile) throw new Error("Profile not found.");
+    if (Number(profile.balance_usd ?? 0) < amountUsd) throw new Error("Insufficient balance.");
+
+    const { data: transaction, error } = await supabaseAdmin
+      .from("transactions")
+      .insert({
+        user_id: context.userId,
+        kind: "withdraw",
+        method: "crypto",
+        account_type: "real",
+        amount: amountKsh,
+        currency: "KSH",
+        amount_usd: amountUsd,
+        status: "pending",
+        is_virtual: false,
+        meta: {
+          crypto_destination_address: data.destination_address,
+          crypto_withdrawal_state: "awaiting_admin_review",
+          admin_approval_required: true,
+          balance_deducted: false,
+          submitted_at: new Date().toISOString(),
+        },
+      } as Record<string, unknown>)
+      .select("id,amount,amount_usd,currency,status,created_at")
+      .single();
+    if (error || !transaction) throw new Error(error?.message ?? "Could not submit crypto withdrawal.");
+
+    return { ok: true, transaction };
   });
 
 export const createWithdrawal = createServerFn({ method: "POST" })

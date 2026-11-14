@@ -4,7 +4,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyProfile } from "@/lib/trades.functions";
 import { resetDemoBalance } from "@/lib/account.functions";
-import { createDeposit, createWithdrawal, syncPendingMpesaDeposits } from "@/lib/wallet.functions";
+import {
+  createDeposit,
+  createWithdrawal,
+  submitCryptoDeposit,
+  submitCryptoWithdrawal,
+  syncPendingMpesaDeposits,
+} from "@/lib/wallet.functions";
 import { getPublicSystemSettings } from "@/lib/system-settings";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -17,6 +23,9 @@ import {
   ArrowUpRight,
   Clock,
   RotateCcw,
+  Copy,
+  Coins,
+  ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getErrorMessage, logDebugEvent, serializeError } from "@/lib/debug-logger";
@@ -48,6 +57,8 @@ function WalletPage() {
   const fetchSettings = useServerFn(getPublicSystemSettings);
   const depositFn = useServerFn(createDeposit);
   const withdrawFn = useServerFn(createWithdrawal);
+  const cryptoDepositFn = useServerFn(submitCryptoDeposit);
+  const cryptoWithdrawFn = useServerFn(submitCryptoWithdrawal);
   const syncDeposits = useServerFn(syncPendingMpesaDeposits);
   const resetDemo = useServerFn(resetDemoBalance);
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: () => fetchProfile() });
@@ -58,8 +69,10 @@ function WalletPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [tab, setTab] = useState<"deposit" | "withdraw" | "history">("deposit");
-  const method = "mpesa";
+  const [method, setMethod] = useState<"mpesa" | "crypto">("mpesa");
   const [amount, setAmount] = useState("");
+  const [cryptoAddress, setCryptoAddress] = useState("");
+  const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<Tx[]>([]);
   const [resettingDemo, setResettingDemo] = useState(false);
@@ -126,6 +139,42 @@ function WalletPage() {
 
     setBusy(true);
     try {
+      if (method === "crypto") {
+        if (activeAccount !== "real") {
+          toast.error("Switch to your real account to request a crypto deposit.");
+          return;
+        }
+        if (!settings?.crypto_deposit_address?.trim()) {
+          toast.error("Crypto deposits are not available right now. Please contact support.");
+          return;
+        }
+        if (!receipt) {
+          toast.error("Upload a screenshot of your crypto transfer first.");
+          return;
+        }
+        const currentUserId = (await supabase.auth.getUser()).data.user?.id;
+        if (!currentUserId) throw new Error("Please sign in again before submitting a deposit.");
+        const submissionId = crypto.randomUUID();
+        const extension = receipt.type === "image/png" ? "png" : receipt.type === "image/webp" ? "webp" : "jpg";
+        const receiptPath = `${currentUserId}/${submissionId}/receipt.${extension}`;
+        const { error: uploadError } = await supabase.storage
+          .from("crypto-deposit-receipts")
+          .upload(receiptPath, receipt, { contentType: receipt.type, upsert: false });
+        if (uploadError) throw new Error(uploadError.message);
+        try {
+          await cryptoDepositFn({ data: { amount_ksh: amt, receipt_path: receiptPath } });
+        } catch (error) {
+          await supabase.storage.from("crypto-deposit-receipts").remove([receiptPath]);
+          throw error;
+        }
+        toast.success("Crypto deposit submitted. Please allow a few minutes while our team reviews it.");
+        setAmount("");
+        setReceipt(null);
+        setTab("history");
+        await loadHistory();
+        qc.invalidateQueries({ queryKey: ["profile"] });
+        return;
+      }
       const result = await depositFn({
         data: { method, amount: amt, account: activeAccount },
       });
@@ -182,6 +231,24 @@ function WalletPage() {
 
     setBusy(true);
     try {
+      if (method === "crypto") {
+        if (cryptoAddress.trim().length < 8) {
+          toast.error("Enter a valid crypto wallet address.");
+          return;
+        }
+        await cryptoWithdrawFn({
+          data: { amount_ksh: amt, destination_address: cryptoAddress.trim() },
+        });
+        toast.success(
+          "Crypto withdrawal request submitted. Please allow a few minutes while our team reviews it. Your balance will be deducted after approval.",
+        );
+        setAmount("");
+        setCryptoAddress("");
+        setTab("history");
+        await loadHistory();
+        qc.invalidateQueries({ queryKey: ["profile"] });
+        return;
+      }
       const result = await withdrawFn({
         data: { method, amount: amt, account: activeAccount },
       });
@@ -279,6 +346,18 @@ function WalletPage() {
 
       {(tab === "deposit" || tab === "withdraw") && (
         <>
+          <div className="grid grid-cols-2 gap-2">
+            {(["mpesa", "crypto"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMethod(value)}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-bold ${method === value ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground"}`}
+              >
+                {value === "mpesa" ? "M-Pesa" : "Crypto"}
+              </button>
+            ))}
+          </div>
           <div>
             <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-1">
               Amount (KSH)
@@ -297,11 +376,11 @@ function WalletPage() {
             </div>
             <div className="mt-1 text-[10px] text-muted-foreground">
               Minimum {minimumLabel(tab, settings?.min_deposit_usd, settings?.min_withdrawal_usd)}
-              {` · ${feeLabel(tab, settings)} fee applied`}
+              {method === "mpesa" ? `${feeLabel(tab, settings)} fee applied` : "Amount entered as KSh equivalent"}
             </div>
           </div>
 
-          <div>
+          {method === "mpesa" ? <div>
             <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-1">
               M-Pesa Number
             </div>
@@ -311,7 +390,32 @@ function WalletPage() {
                 {mpesaPhone || "Add phone in Profile"}
               </div>
             </div>
-          </div>
+          </div> : tab === "deposit" ? (
+            <div className="space-y-3 rounded-xl border border-border bg-card p-3">
+              <div className="flex items-center gap-2 text-sm font-bold"><Coins className="h-4 w-4 text-primary" /> Send crypto to this wallet</div>
+              {settings?.crypto_deposit_address ? <>
+                <div className="break-all rounded-lg border border-border bg-background p-2.5 font-mono text-xs">{settings.crypto_deposit_address}</div>
+                <button type="button" onClick={() => navigator.clipboard.writeText(settings.crypto_deposit_address).then(() => toast.success("Wallet address copied")).catch(() => toast.error("Could not copy wallet address"))} className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 px-3 py-2 text-xs font-bold text-primary"><Copy className="h-3.5 w-3.5" /> Copy wallet address</button>
+                {settings.crypto_deposit_instructions && <p className="text-xs text-muted-foreground">{settings.crypto_deposit_instructions}</p>}
+                <label className="block cursor-pointer rounded-lg border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                  <ImagePlus className="mx-auto mb-1 h-5 w-5 text-primary" />
+                  {receipt ? receipt.name : "Upload transfer screenshot (PNG, JPG, or WebP; max 8 MB)"}
+                  <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(event) => {
+                    const file = event.currentTarget.files?.[0] ?? null;
+                    if (file && file.size > 8 * 1024 * 1024) { toast.error("Screenshot must be 8 MB or smaller."); event.currentTarget.value = ""; return; }
+                    setReceipt(file);
+                  }} />
+                </label>
+                <p className="text-[10px] text-muted-foreground">Your screenshot is private and visible only to admins reviewing the deposit.</p>
+              </> : <p className="text-xs text-muted-foreground">Crypto deposits are temporarily unavailable. Please contact support.</p>}
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-xl border border-border bg-card p-3">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Wallet address to receive crypto</label>
+              <input value={cryptoAddress} onChange={(event) => setCryptoAddress(event.target.value)} placeholder="Paste your crypto wallet address" className="w-full rounded-lg border border-border bg-background px-3 py-2.5 font-mono text-xs outline-none focus:border-primary" />
+              <p className="text-[10px] text-muted-foreground">Your request stays pending until approved. Funds are deducted only after admin approval.</p>
+            </div>
+          )}
 
           {isDemoWithdrawal && (
             <div className="rounded-xl border border-bear/30 bg-bear/10 px-3 py-2 text-xs font-semibold text-bear">
@@ -332,10 +436,10 @@ function WalletPage() {
             {busy
               ? "Processing..."
               : tab === "deposit"
-                ? `Deposit KSh${grossDisplay(amount, settings?.deposit_fee_pct)}`
+                ? method === "crypto" ? "Submit crypto deposit" : `Deposit KSh${grossDisplay(amount, settings?.deposit_fee_pct)}`
                 : isDemoWithdrawal
                   ? "Demo withdrawals disabled"
-                  : `Withdraw KSh${grossDisplay(amount, settings?.withdrawal_fee_pct)} (receive KSh${amount || 0})`}
+                  : method === "crypto" ? "Request crypto withdrawal" : `Withdraw KSh${grossDisplay(amount, settings?.withdrawal_fee_pct)} (receive KSh${amount || 0})`}
           </button>
         </>
       )}
@@ -403,6 +507,21 @@ function WalletPage() {
 }
 
 function statusLabel(tx: Tx) {
+  if (tx.method === "crypto" && tx.kind === "deposit" && tx.status === "pending") {
+    return "Waiting for admin approval";
+  }
+  if (tx.method === "crypto" && tx.kind === "withdraw" && tx.status === "pending") {
+    return "Under admin review · balance not deducted";
+  }
+  if (tx.method === "crypto" && tx.kind === "withdraw" && tx.status === "processing") {
+    return "Approved · crypto transfer in progress";
+  }
+  if (tx.method === "crypto" && tx.kind === "withdraw" && tx.status === "completed") {
+    return "Crypto sent";
+  }
+  if (tx.status === "cancelled" && tx.meta?.crypto_withdrawal_state === "rejected") {
+    return "Rejected by admin";
+  }
   if (tx.kind === "withdraw" && tx.meta?.payout_suppressed === true) {
     return "deducted - payout disabled";
   }

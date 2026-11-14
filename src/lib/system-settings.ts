@@ -22,6 +22,8 @@ export type SystemSettings = {
   caps_daily_loss_usd: number;
   caps_weekly_loss_usd: number;
   caps_monthly_loss_usd: number;
+  crypto_deposit_address: string;
+  crypto_deposit_instructions: string;
   updated_at?: string | null;
 };
 
@@ -47,6 +49,8 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   caps_daily_loss_usd: 10000,
   caps_weekly_loss_usd: 50000,
   caps_monthly_loss_usd: 100000,
+  crypto_deposit_address: "",
+  crypto_deposit_instructions: "",
   updated_at: null,
 };
 
@@ -70,6 +74,8 @@ const SystemSettingsInput = z.object({
   caps_daily_loss_usd: z.number().min(0).max(10000000).optional(),
   caps_weekly_loss_usd: z.number().min(0).max(10000000).optional(),
   caps_monthly_loss_usd: z.number().min(0).max(10000000).optional(),
+  crypto_deposit_address: z.string().trim().max(500).optional(),
+  crypto_deposit_instructions: z.string().trim().max(1000).optional(),
 });
 
 export const getPublicSystemSettings = createServerFn({ method: "GET" })
@@ -98,7 +104,7 @@ export async function readSystemSettings(): Promise<SystemSettings> {
   const allColumnsQuery = supabaseAdmin
     .from("system_settings")
     .select(
-      "id, min_deposit_usd, min_withdrawal_usd, deposit_fee_pct, withdrawal_fee_pct, withdrawal_tax_pct, rtp_percent, win_rate_percent, limits_min_stake_usd, limits_max_stake_usd, volatility_model_variant, user_segmentation_tags, liability_limits_market_usd, liability_limits_user_usd, fraud_detection_enabled, fraud_detection_rules, engagement_notification_triggers, caps_daily_loss_usd, caps_weekly_loss_usd, caps_monthly_loss_usd, updated_at",
+      "id, min_deposit_usd, min_withdrawal_usd, deposit_fee_pct, withdrawal_fee_pct, withdrawal_tax_pct, rtp_percent, win_rate_percent, limits_min_stake_usd, limits_max_stake_usd, volatility_model_variant, user_segmentation_tags, liability_limits_market_usd, liability_limits_user_usd, fraud_detection_enabled, fraud_detection_rules, engagement_notification_triggers, caps_daily_loss_usd, caps_weekly_loss_usd, caps_monthly_loss_usd, crypto_deposit_address, crypto_deposit_instructions, updated_at",
     )
     .eq("id", SYSTEM_SETTINGS_ID)
     .maybeSingle();
@@ -182,6 +188,8 @@ function mapSystemSettingsRow(data: Record<string, unknown>): SystemSettings {
     caps_monthly_loss_usd: Number(
       data.caps_monthly_loss_usd ?? DEFAULT_SYSTEM_SETTINGS.caps_monthly_loss_usd,
     ),
+    crypto_deposit_address: String(data.crypto_deposit_address ?? ""),
+    crypto_deposit_instructions: String(data.crypto_deposit_instructions ?? ""),
     updated_at: (data.updated_at as string | null | undefined) ?? null,
   };
 }
@@ -256,6 +264,8 @@ export async function writeSystemSettings(
       changes.caps_monthly_loss_usd ?? current.caps_monthly_loss_usd,
       100000,
     ),
+    crypto_deposit_address: normalizeText(changes.crypto_deposit_address ?? current.crypto_deposit_address, ""),
+    crypto_deposit_instructions: normalizeText(changes.crypto_deposit_instructions ?? current.crypto_deposit_instructions, ""),
   };
 
   const basePayload = {
@@ -284,6 +294,8 @@ export async function writeSystemSettings(
     caps_daily_loss_usd: nextSettings.caps_daily_loss_usd,
     caps_weekly_loss_usd: nextSettings.caps_weekly_loss_usd,
     caps_monthly_loss_usd: nextSettings.caps_monthly_loss_usd,
+    crypto_deposit_address: nextSettings.crypto_deposit_address,
+    crypto_deposit_instructions: nextSettings.crypto_deposit_instructions,
   } as Record<string, unknown>;
 
   const { error } = initialize
