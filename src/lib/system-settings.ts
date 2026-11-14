@@ -433,6 +433,7 @@ function isMissingColumnError(error: { message?: string | null }) {
   return (
     message.includes("does not exist") ||
     message.includes("unknown column") ||
-    message.includes("could not find the column")
+    message.includes("could not find the column") ||
+    (message.includes("schema cache") && message.includes("column"))
   );
 }
