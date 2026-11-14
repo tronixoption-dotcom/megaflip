@@ -477,10 +477,11 @@ function AdminDepositsTab() {
         {pageRows.map((row) => {
           const status = String(row.status).toLowerCase();
           const pending = !["completed", "success", "successful", "cancelled", "failed"].includes(status);
+          const cryptoDeposit = row.method === "crypto";
           const receiptUrl = typeof row.receipt_url === "string" ? row.receipt_url : null;
           return <div key={row.id} className="grid grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(220px,1.3fr)] items-center gap-4 border-b border-[#c5e4e8] px-5 py-4 last:border-0">
             <div><div className="font-semibold">{row.user_name}</div><div className="text-sm text-[#315c72]">{row.phone ?? row.user_id} · {new Date(row.created_at).toLocaleString()}</div></div>
-            <div className="font-medium">{formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}<div className="text-xs text-[#315c72]">KSh {Number(row.amount ?? 0).toLocaleString()}</div></div>
+            <div className="font-medium">{cryptoDeposit && row.currency === "USD" ? `USDT ${Number(row.amount_usd ?? row.amount ?? 0).toFixed(2)}` : formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}{cryptoDeposit && row.currency === "USD" ? null : <div className="text-xs text-[#315c72]">KSh {Number(row.amount ?? 0).toLocaleString()}</div>}</div>
             <div className="text-[#315c72]">{receiptUrl ? <a href={receiptUrl} target="_blank" rel="noreferrer" className="inline-flex flex-col items-start gap-1 text-[#009fe3]"><img src={receiptUrl} alt="Client crypto deposit receipt" className="h-16 max-w-28 rounded-md border border-[#afdbe3] object-cover" />View screenshot</a> : row.meta?.receipt ?? "No screenshot available"}</div>
             <StatusPill status={pending ? "Pending review" : status === "completed" ? "Approved" : status === "cancelled" ? "Rejected" : status} />
             <div className="flex gap-2">{pending ? <><button onClick={() => approveMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#b9f0df] px-4 py-2 text-sm font-semibold text-[#00a968]">Approve</button><button onClick={() => rejectMut.mutate(row.id)} disabled={approveMut.isPending || rejectMut.isPending} className="rounded-full bg-[#f8d9dc] px-4 py-2 text-sm font-semibold text-[#e52e3b]">Reject</button></> : <span className="text-sm text-[#315c72]">Reviewed</span>}</div>
@@ -1007,7 +1008,7 @@ function SettingsTab() {
             />
             <label className="space-y-1 block">
               <span className="text-[9px] uppercase font-bold text-muted-foreground">
-                Accepted coin, network, or payment instructions
+                USDT network or deposit instructions
               </span>
               <textarea
                 value={cryptoDepositInstructions}
@@ -1018,8 +1019,8 @@ function SettingsTab() {
               />
             </label>
             <p className="text-[10px] text-muted-foreground">
-              Clients see these details before uploading proof. Only deposits approved by an admin
-              are added to their real balance.
+              Clients can deposit USDT only, with a 10 USDT minimum. State the supported USDT
+              network clearly; only deposits approved by an admin are added to their real balance.
             </p>
           </div>
           <div className="rounded-lg border border-border bg-surface/80 p-3 space-y-2">

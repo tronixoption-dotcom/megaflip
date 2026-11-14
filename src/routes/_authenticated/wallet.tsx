@@ -118,22 +118,19 @@ function WalletPage() {
 
   async function deposit() {
     const amt = Number(amount);
+    const isCryptoDeposit = method === "crypto";
     logDebugEvent("info", "wallet.deposit", "Deposit button pressed", {
       method,
       amount: amt,
       account: activeAccount,
       phone: mpesaPhone,
     });
-    const minimum = minimumAmount(
-      "deposit",
-      settings?.min_deposit_usd,
-      settings?.min_withdrawal_usd,
-    );
+    const minimum = isCryptoDeposit
+      ? 10
+      : minimumAmount("deposit", settings?.min_deposit_usd, settings?.min_withdrawal_usd);
     if (!amt || amt < minimum) {
       logDebugEvent("warn", "wallet.deposit", "Deposit validation failed", { method, amount: amt });
-      toast.error(
-        `Minimum deposit ${minimumLabel("deposit", settings?.min_deposit_usd, settings?.min_withdrawal_usd)}`,
-      );
+      toast.error(isCryptoDeposit ? "Minimum crypto deposit is 10 USDT." : `Minimum deposit ${minimumLabel("deposit", settings?.min_deposit_usd, settings?.min_withdrawal_usd)}`);
       return;
     }
 
@@ -162,7 +159,7 @@ function WalletPage() {
           .upload(receiptPath, receipt, { contentType: receipt.type, upsert: false });
         if (uploadError) throw new Error(uploadError.message);
         try {
-          await cryptoDepositFn({ data: { amount_ksh: amt, receipt_path: receiptPath } });
+          await cryptoDepositFn({ data: { amount_usdt: amt, receipt_path: receiptPath } });
         } catch (error) {
           await supabase.storage.from("crypto-deposit-receipts").remove([receiptPath]);
           throw error;
@@ -360,23 +357,22 @@ function WalletPage() {
           </div>
           <div>
             <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-1">
-              Amount (KSH)
+              {method === "crypto" && tab === "deposit" ? "Amount (USDT)" : "Amount (KSH)"}
             </div>
             <div className="flex items-center bg-card border border-border rounded-xl px-3 py-2.5">
-              <span className="font-bold text-muted-foreground mr-2 text-sm">KSh</span>
+              <span className="font-bold text-muted-foreground mr-2 text-sm">{method === "crypto" && tab === "deposit" ? "USDT" : "KSh"}</span>
               <input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder={String(
-                  minimumAmount(tab, settings?.min_deposit_usd, settings?.min_withdrawal_usd),
+                  method === "crypto" && tab === "deposit" ? "10" : minimumAmount(tab, settings?.min_deposit_usd, settings?.min_withdrawal_usd),
                 )}
-                inputMode="numeric"
+                inputMode={method === "crypto" && tab === "deposit" ? "decimal" : "numeric"}
                 className="flex-1 bg-transparent outline-none font-bold text-base tabular-nums"
               />
             </div>
             <div className="mt-1 text-[10px] text-muted-foreground">
-              Minimum {minimumLabel(tab, settings?.min_deposit_usd, settings?.min_withdrawal_usd)}
-              {method === "mpesa" ? `${feeLabel(tab, settings)} fee applied` : "Amount entered as KSh equivalent"}
+              {method === "crypto" && tab === "deposit" ? "Minimum 10 USDT · USDT only" : <>Minimum {minimumLabel(tab, settings?.min_deposit_usd, settings?.min_withdrawal_usd)} {method === "mpesa" ? `${feeLabel(tab, settings)} fee applied` : "Amount entered as KSh equivalent"}</>}
             </div>
           </div>
 
@@ -392,7 +388,7 @@ function WalletPage() {
             </div>
           </div> : tab === "deposit" ? (
             <div className="space-y-3 rounded-xl border border-border bg-card p-3">
-              <div className="flex items-center gap-2 text-sm font-bold"><Coins className="h-4 w-4 text-primary" /> Send crypto to this wallet</div>
+              <div className="flex items-center gap-2 text-sm font-bold"><Coins className="h-4 w-4 text-primary" /> Send USDT only to this wallet</div>
               {settings?.crypto_deposit_address ? <>
                 <div className="break-all rounded-lg border border-border bg-background p-2.5 font-mono text-xs">{settings.crypto_deposit_address}</div>
                 <button type="button" onClick={() => navigator.clipboard.writeText(settings.crypto_deposit_address).then(() => toast.success("Wallet address copied")).catch(() => toast.error("Could not copy wallet address"))} className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 px-3 py-2 text-xs font-bold text-primary"><Copy className="h-3.5 w-3.5" /> Copy wallet address</button>
@@ -483,7 +479,7 @@ function WalletPage() {
                     }
                   >
                     {isCredit ? "+" : "-"}
-                    {t.currency === "KSH" ? "KSh" : "$"}
+                    {t.method === "crypto" && t.kind === "deposit" ? "USDT " : t.currency === "KSH" ? "KSh" : "$"}
                     {Number(t.amount).toFixed(2)}
                   </div>
                   <div className="text-[10px] text-muted-foreground capitalize">

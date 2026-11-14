@@ -14,7 +14,7 @@ const MoneyInput = z.object({
 });
 
 const CryptoDepositInput = z.object({
-  amount_ksh: z.number().positive().max(10_000_000),
+  amount_usdt: z.number().positive().max(10_000_000),
   receipt_path: z.string().min(1).max(700),
 });
 
@@ -91,9 +91,8 @@ export const submitCryptoDeposit = createServerFn({ method: "POST" })
       throw new Error("Crypto deposits are not available yet. Please contact support.");
     }
 
-    const minAmountKsh = Number(settings.min_deposit_usd ?? 3) * USD_TO_KSH;
-    if (data.amount_ksh < minAmountKsh) {
-      throw new Error(`Minimum crypto deposit is KSh ${minAmountKsh.toFixed(0)}.`);
+    if (data.amount_usdt < 10) {
+      throw new Error("Minimum crypto deposit is 10 USDT.");
     }
 
     const expectedPrefix = `${context.userId}/`;
@@ -107,7 +106,7 @@ export const submitCryptoDeposit = createServerFn({ method: "POST" })
       .createSignedUrl(data.receipt_path, 60);
     if (receiptError) throw new Error("The uploaded receipt could not be verified. Please try again.");
 
-    const amountKsh = roundMoney(data.amount_ksh);
+    const amountUsdt = roundMoney(data.amount_usdt);
     const { data: transaction, error } = await supabaseAdmin
       .from("transactions")
       .insert({
@@ -115,13 +114,15 @@ export const submitCryptoDeposit = createServerFn({ method: "POST" })
         kind: "deposit",
         method: "crypto",
         account_type: "real",
-        amount: amountKsh,
-        currency: "KSH",
-        amount_usd: toUsd(amountKsh, "KSH"),
+        amount: amountUsdt,
+        currency: "USD",
+        amount_usd: amountUsdt,
         status: "pending",
         is_virtual: false,
         meta: {
           crypto_receipt_path: data.receipt_path,
+          crypto_asset: "USDT",
+          crypto_amount_usdt: amountUsdt,
           crypto_wallet_address: settings.crypto_deposit_address.trim(),
           crypto_deposit_instructions: settings.crypto_deposit_instructions.trim(),
           submitted_at: new Date().toISOString(),
