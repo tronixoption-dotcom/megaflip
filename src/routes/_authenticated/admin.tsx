@@ -451,7 +451,7 @@ function AdminDepositsTab() {
   useEffect(() => setPage(0), [method, dateFilter]);
   const approveMut = useMutation({
     mutationFn: (id: string) => approve({ data: { transaction_id: id } }),
-    onSuccess: () => { toast.success("Deposit approved and credited"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); },
+    onSuccess: () => { toast.success("Deposit approved and credited"); qc.invalidateQueries({ queryKey: ["admin-deposits"] }); qc.invalidateQueries({ queryKey: ["accounts-report"] }); qc.invalidateQueries({ queryKey: ["house-balance-history"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Deposit approval failed"),
   });
   const rejectMut = useMutation({
@@ -516,6 +516,7 @@ function AdminWithdrawalsTab() {
     qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
     qc.invalidateQueries({ queryKey: ["accounts-report"] });
     qc.invalidateQueries({ queryKey: ["admin-clients"] });
+    qc.invalidateQueries({ queryKey: ["house-balance-history"] });
   };
   const action = useMutation({
     mutationFn: async ({ id, method, type, transactionHash }: { id: string; method: string; type: "approve" | "reject" | "sent"; transactionHash?: string }) => {
@@ -1411,6 +1412,7 @@ function AccountAdjustments() {
       setRetained("0");
       qc.invalidateQueries({ queryKey: ["account-adjustments"] });
       qc.invalidateQueries({ queryKey: ["accounts-report"] });
+      qc.invalidateQueries({ queryKey: ["house-balance-history"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Adjustment failed"),
   });

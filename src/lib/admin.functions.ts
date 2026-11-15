@@ -942,21 +942,41 @@ export const getHouseBalanceHistory = createServerFn({ method: "POST" })
     const from = nairobiBoundaryUtc(dates[0], false);
     const to = nairobiBoundaryUtc(addCalendarDays(today, 1), false);
 
-    const { data: transactions, error } = await supabaseAdmin
-      .from("transactions")
-      .select("kind,amount_usd,status,meta,currency,created_at,account_type")
-      .eq("account_type", "real")
-      .gte("created_at", from)
-      .lt("created_at", to)
-      .order("created_at", { ascending: true })
-      .limit(20000);
-    if (error) throw new Error(error.message);
-    const { data: adjustments, error: adjustmentsError } = await supabaseAdmin
-      .from("account_metric_adjustments")
-      .select("deposits_usd,withdrawals_usd,created_at")
-      .gte("created_at", from)
-      .lt("created_at", to);
-    if (adjustmentsError) throw new Error(adjustmentsError.message);
+    const pageSize = 1000;
+    const transactions: Array<{
+      kind: string;
+      amount_usd: number | string | null;
+      status: string;
+      meta: Record<string, unknown> | null;
+      currency: string | null;
+      created_at: string;
+    }> = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: page, error, count } = await supabaseAdmin
+        .from("transactions")
+        .select("kind,amount_usd,status,meta,currency,created_at,account_type", { count: "exact" })
+        .eq("account_type", "real")
+        .gte("created_at", from)
+        .lt("created_at", to)
+        .order("created_at", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      transactions.push(...((page ?? []) as unknown as typeof transactions));
+      if ((page?.length ?? 0) === 0 || (count !== null && count !== undefined && offset + (page?.length ?? 0) >= count)) break;
+    }
+    const adjustments: Array<{ deposits_usd: number | string | null; withdrawals_usd: number | string | null; created_at: string }> = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: page, error, count } = await supabaseAdmin
+        .from("account_metric_adjustments")
+        .select("deposits_usd,withdrawals_usd,created_at", { count: "exact" })
+        .gte("created_at", from)
+        .lt("created_at", to)
+        .order("created_at", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error) throw new Error(error.message);
+      adjustments.push(...((page ?? []) as unknown as typeof adjustments));
+      if ((page?.length ?? 0) === 0 || (count !== null && count !== undefined && offset + (page?.length ?? 0) >= count)) break;
+    }
 
     const rows = new Map(
       dates.map((date) => [
@@ -964,15 +984,7 @@ export const getHouseBalanceHistory = createServerFn({ method: "POST" })
         { date, deposits_usd: 0, fees_usd: 0, withdrawals_usd: 0, closing_balance_usd: 0 },
       ]),
     );
-    const dailyTransactions = (transactions ?? []) as Array<{
-      kind: string;
-      amount_usd?: number | string | null;
-      status: string;
-      meta?: Record<string, unknown> | null;
-      currency?: string | null;
-      created_at: string;
-    }>;
-    for (const transaction of dailyTransactions) {
+    for (const transaction of transactions) {
       const status = String(transaction.status ?? "").trim().toLowerCase();
       const kind = String(transaction.kind ?? "").trim().toLowerCase();
       const countedDeposit = kind === "deposit" && isSuccessfulDepositStatus(status);
