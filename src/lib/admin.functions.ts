@@ -1149,13 +1149,18 @@ export const listAdminDeposits = createServerFn({ method: "GET" })
     const { data: profiles } = ids.length ? await supabaseAdmin.from("profiles").select("id,email,full_name,username,phone").in("id", ids) : { data: [] };
     const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
     return Promise.all((rows ?? []).filter((row) => !internalIds.has(row.user_id)).map(async (row) => {
-      const receiptPath = typeof row.meta?.crypto_receipt_path === "string" ? row.meta.crypto_receipt_path : null;
-      const { data: receipt } = receiptPath
+      // Crypto receipts live in private storage. Never expose a crypto receipt
+      // URL (or crypto metadata) on the M-Pesa deposits view.
+      const receiptPath = selectedMethod === "crypto" && typeof row.meta?.crypto_receipt_path === "string"
+        ? row.meta.crypto_receipt_path
+        : null;
+      const { data: receipt, error: receiptError } = receiptPath
         ? await supabaseAdmin.storage.from("crypto-deposit-receipts").createSignedUrl(receiptPath, 3600)
-        : { data: null };
+        : { data: null, error: null };
       return {
       ...row,
       receipt_url: receipt?.signedUrl ?? null,
+      receipt_error: receiptError?.message ?? null,
       user_name: profileMap.get(row.user_id)?.full_name ?? profileMap.get(row.user_id)?.username ?? profileMap.get(row.user_id)?.email ?? "Client",
       phone: profileMap.get(row.user_id)?.phone ?? row.meta?.phone ?? null,
       };
