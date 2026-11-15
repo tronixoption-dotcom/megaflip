@@ -1114,23 +1114,23 @@ export const listWithdrawalApprovalRequests = createServerFn({ method: "GET" })
     };
   });
 
-export const listAdminDeposits = createServerFn({ method: "GET" })
+// This query takes required filters, so use POST to ensure TanStack Start sends
+// them in the request body on cold navigation as well as normal page changes.
+export const listAdminDeposits = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) =>
     z
       .object({
-        method: z.enum(["mpesa", "crypto"]).default("mpesa"),
+        method: z.enum(["mpesa", "crypto"]),
         start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       })
-      .default({}),
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // TanStack GET function payloads can arrive without optional fields during
-    // a cold navigation. Never pass an undefined string into the Postgres enum.
-    const selectedMethod = data?.method === "crypto" ? "crypto" : "mpesa";
+    const selectedMethod = data.method;
     let query = supabaseAdmin
       .from("transactions")
       .select("id,user_id,amount,amount_usd,currency,status,method,meta,created_at")

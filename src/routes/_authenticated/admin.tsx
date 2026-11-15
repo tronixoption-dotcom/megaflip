@@ -447,7 +447,7 @@ function AdminDepositsTab() {
     queryFn: () => list({ data: { method, ...dates } }),
     refetchInterval: 30000,
   });
-  const visibleRows = filterAdminRowsByDate(rows, dateFilter);
+  const visibleRows = filterAdminRowsByDate(rows.filter((row) => row.method === method), dateFilter);
   const pageRows = visibleRows.slice(page * ADMIN_PAGE_SIZE, (page + 1) * ADMIN_PAGE_SIZE);
   useEffect(() => setPage(0), [method, dateFilter]);
   const approveMut = useMutation({
@@ -477,10 +477,10 @@ function AdminDepositsTab() {
         {pageRows.map((row) => {
           const status = String(row.status).toLowerCase();
           const pending = !["completed", "success", "successful", "cancelled", "failed"].includes(status);
-          const cryptoDeposit = row.method === "crypto";
+          const cryptoDeposit = method === "crypto";
           const receiptUrl = typeof row.receipt_url === "string" ? row.receipt_url : null;
           return <div key={row.id} className="grid grid-cols-[minmax(230px,2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(220px,1.3fr)] items-center gap-4 border-b border-[#c5e4e8] px-5 py-4 last:border-0">
-            <div><div className="font-semibold">{row.user_name}</div><div className="text-sm text-[#315c72]">{row.phone ?? row.user_id} · {new Date(row.created_at).toLocaleString()}</div></div>
+            <div><div className="font-semibold">{row.user_name}</div><div className="text-sm text-[#315c72]">{cryptoDeposit ? "Crypto transfer" : row.phone ?? row.user_id} · {new Date(row.created_at).toLocaleString()}</div></div>
             <div className="font-medium">{cryptoDeposit && row.currency === "USD" ? `USDT ${Number(row.amount_usd ?? row.amount ?? 0).toFixed(2)}` : formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}{cryptoDeposit && row.currency === "USD" ? null : <div className="text-xs text-[#315c72]">KSh {Number(row.amount ?? 0).toLocaleString()}</div>}</div>
             <div className="text-[#315c72]">{cryptoDeposit ? (receiptUrl ? <a href={receiptUrl} target="_blank" rel="noreferrer" className="inline-flex flex-col items-start gap-1 text-[#009fe3]"><img src={receiptUrl} alt="Client crypto deposit receipt" className="h-16 max-w-28 rounded-md border border-[#afdbe3] object-cover" />View screenshot</a> : row.receipt_error ? `Screenshot unavailable: ${row.receipt_error}` : "No screenshot available") : row.meta?.receipt ?? "—"}</div>
             <StatusPill status={pending ? "Pending review" : status === "completed" ? "Approved" : status === "cancelled" ? "Rejected" : status} />
