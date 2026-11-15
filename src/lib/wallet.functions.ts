@@ -140,6 +140,10 @@ export const submitCryptoWithdrawal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => CryptoWithdrawalInput.parse(d))
   .handler(async ({ data, context }) => {
+    if (await hasInternalRole(context.userId)) {
+      await recordBlockedWithdrawalAttempt(context.userId, data.amount_ksh, "internal_role");
+      throw new Error("Withdrawals are disabled for admin and agent accounts.");
+    }
     const settings = await readSystemSettings();
     const amountKsh = roundMoney(data.amount_ksh);
     const amountUsd = toUsd(amountKsh, "KSH");
@@ -149,36 +153,15 @@ export const submitCryptoWithdrawal = createServerFn({ method: "POST" })
     }
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("balance_usd")
-      .eq("id", context.userId)
-      .single();
-    if (profileError || !profile) throw new Error("Profile not found.");
-    if (Number(profile.balance_usd ?? 0) < amountUsd) throw new Error("Insufficient balance.");
-
-    const { data: transaction, error } = await supabaseAdmin
-      .from("transactions")
-      .insert({
-        user_id: context.userId,
-        kind: "withdraw",
-        method: "crypto",
-        account_type: "real",
-        amount: amountKsh,
-        currency: "KSH",
-        amount_usd: amountUsd,
-        status: "pending",
-        is_virtual: false,
-        meta: {
-          crypto_destination_address: data.destination_address,
-          crypto_withdrawal_state: "awaiting_admin_review",
-          admin_approval_required: true,
-          balance_deducted: false,
-          submitted_at: new Date().toISOString(),
-        },
-      } as Record<string, unknown>)
-      .select("id,amount,amount_usd,currency,status,created_at")
-      .single();
+    const rpcClient = supabaseAdmin as unknown as {
+      rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
+    };
+    const { data: transaction, error } = await rpcClient.rpc("create_crypto_withdrawal", {
+      _user_id: context.userId,
+      _amount_ksh: amountKsh,
+      _amount_usd: amountUsd,
+      _destination_address: data.destination_address,
+    });
     if (error || !transaction) throw new Error(error?.message ?? "Could not submit crypto withdrawal.");
 
     return { ok: true, transaction };

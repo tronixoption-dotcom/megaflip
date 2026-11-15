@@ -52,7 +52,6 @@ import {
   approveAdminDeposit,
   rejectAdminDeposit,
   listAdminWithdrawals,
-  approveCryptoWithdrawalRequest,
   rejectCryptoWithdrawalRequest,
   completeCryptoWithdrawal,
   rejectAdminWithdrawal,
@@ -498,10 +497,10 @@ function AdminWithdrawalsTab() {
   const list = useServerFn(listAdminWithdrawals);
   const approve = useServerFn(approveWithdrawalApprovalRequest);
   const reject = useServerFn(rejectAdminWithdrawal);
-  const approveCrypto = useServerFn(approveCryptoWithdrawalRequest);
   const rejectCrypto = useServerFn(rejectCryptoWithdrawalRequest);
   const completeCrypto = useServerFn(completeCryptoWithdrawal);
   const qc = useQueryClient();
+  const [method, setMethod] = useState<"mpesa" | "crypto">("mpesa");
   const [dateFilter, setDateFilter] = useAdminDateFilter();
   const [page, setPage] = useState(0);
   const dates = dateFilter.mode === "all" ? {} : { start_date: dateFilter.start || undefined, end_date: dateFilter.end || undefined };
@@ -510,9 +509,9 @@ function AdminWithdrawalsTab() {
     queryFn: () => list({ data: dates }),
     refetchInterval: 30000,
   });
-  const visibleRows = filterAdminRowsByDate(rows, dateFilter);
+  const visibleRows = filterAdminRowsByDate(rows.filter((row) => (row.method ?? "mpesa") === method), dateFilter);
   const pageRows = visibleRows.slice(page * ADMIN_PAGE_SIZE, (page + 1) * ADMIN_PAGE_SIZE);
-  useEffect(() => setPage(0), [dateFilter]);
+  useEffect(() => setPage(0), [dateFilter, method]);
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["admin-withdrawals"] });
     qc.invalidateQueries({ queryKey: ["accounts-report"] });
@@ -521,18 +520,21 @@ function AdminWithdrawalsTab() {
   const action = useMutation({
     mutationFn: async ({ id, method, type, transactionHash }: { id: string; method: string; type: "approve" | "reject" | "sent"; transactionHash?: string }) => {
       if (method === "crypto") {
-        if (type === "approve") return approveCrypto({ data: { transaction_id: id } });
+        if (type === "approve") return completeCrypto({ data: { transaction_id: id } });
         if (type === "reject") return rejectCrypto({ data: { transaction_id: id } });
         return completeCrypto({ data: { transaction_id: id, transaction_hash: transactionHash } });
       }
       return type === "reject" ? reject({ data: { transaction_id: id } }) : approve({ data: { transaction_id: id } });
     },
-    onSuccess: (_, vars) => { toast.success(vars.type === "reject" ? "Withdrawal rejected" : vars.type === "sent" ? "Crypto transfer marked sent" : vars.method === "crypto" ? "Crypto withdrawal approved; balance deducted" : "Withdrawal approved; awaiting provider confirmation"); refresh(); },
+    onSuccess: (_, vars) => { toast.success(vars.type === "reject" ? "Withdrawal rejected" : vars.method === "crypto" ? "Crypto withdrawal approved and marked paid" : "Withdrawal approved; awaiting provider confirmation"); refresh(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Withdrawal action failed"),
   });
   return <div className="space-y-4">
+    <div className="flex gap-2">
+      {(["mpesa", "crypto"] as const).map((value) => <button key={value} type="button" onClick={() => setMethod(value)} className={`rounded-full px-4 py-2 text-sm font-bold ${method === value ? "bg-[#bcebf7] text-[#009fe3]" : "bg-white/60 text-[#315c72]"}`}>{value === "mpesa" ? "M-Pesa withdrawals" : "Crypto withdrawals"}</button>)}
+    </div>
     <AdminDateRangePicker value={dateFilter} onChange={setDateFilter} />
-    <AdminTableShell title="Withdrawals">
+    <AdminTableShell title={method === "crypto" ? "Crypto withdrawals" : "M-Pesa withdrawals"}>
       {isLoading && <div className="p-8 text-center text-[#315c72]">Loading withdrawals…</div>}
       {isError && <div className="p-8 text-center text-[#e52e3b]">Unable to load withdrawals: {error instanceof Error ? error.message : "Please retry"}</div>}
       {!isLoading && !isError && visibleRows.length === 0 && <div className="p-8 text-center text-[#315c72]">No withdrawals found for this date.</div>}
@@ -547,10 +549,10 @@ function AdminWithdrawalsTab() {
           <div className="font-medium">{formatAdminMoney(row.amount_usd ?? Number(row.amount ?? 0) / 130, currency)}</div>
           <div className="text-[#315c72]">{crypto ? "—" : formatAdminMoney(Number(row.fee ?? 0) / 130, currency)}</div>
           <div className="font-medium">{formatAdminMoney(crypto ? Number(row.amount_usd ?? 0) : Number(row.payout ?? 0) / 130, currency)}</div>
-          <div className="break-all text-xs text-[#315c72]">{crypto ? address ?? "Address unavailable" : row.phone ?? "Phone unavailable"}</div>
+          <div className="break-all text-xs text-[#315c72]">{crypto ? <div className="flex items-center gap-2">{address ?? "Address unavailable"}{address && <button type="button" onClick={() => navigator.clipboard.writeText(address).then(() => toast.success("Wallet address copied")).catch(() => toast.error("Could not copy address"))} className="shrink-0 rounded-full bg-[#bcebf7] px-2 py-1 text-xs font-semibold text-[#009fe3]">Copy</button>}</div> : row.phone ?? "Phone unavailable"}</div>
           <StatusPill status={status === "completed" ? crypto ? "Crypto sent" : "Paid" : status === "failed" ? "Failed" : crypto && awaitingProvider ? "Approved · transfer due" : awaitingProvider ? "Awaiting provider" : active ? "Pending approval" : "Rejected"} />
           <div className="flex flex-wrap gap-1.5">
-            {active && <><button onClick={() => action.mutate({ id: row.id, method: row.method ?? "mpesa", type: "approve" })} disabled={action.isPending} className="rounded-full bg-[#bcebf7] px-3 py-1.5 text-sm font-semibold text-[#009fe3]">Approve</button><button onClick={() => action.mutate({ id: row.id, method: row.method ?? "mpesa", type: "reject" })} disabled={action.isPending} className="rounded-full bg-[#f8d9dc] px-3 py-1.5 text-sm font-semibold text-[#e52e3b]">Reject</button></>}
+            {active && <><button onClick={() => action.mutate({ id: row.id, method: row.method ?? "mpesa", type: "approve" })} disabled={action.isPending} className="rounded-full bg-[#bcebf7] px-3 py-1.5 text-sm font-semibold text-[#009fe3]">{crypto ? "Approve as paid" : "Approve"}</button><button onClick={() => action.mutate({ id: row.id, method: row.method ?? "mpesa", type: "reject" })} disabled={action.isPending} className="rounded-full bg-[#f8d9dc] px-3 py-1.5 text-sm font-semibold text-[#e52e3b]">Reject</button></>}
             {crypto && awaitingProvider && <button onClick={() => { const enteredHash = window.prompt("Optional crypto transaction hash:"); if (enteredHash === null) return; action.mutate({ id: row.id, method: "crypto", type: "sent", transactionHash: enteredHash || undefined }); }} disabled={action.isPending} className="rounded-full bg-[#b9f0df] px-3 py-1.5 text-sm font-semibold text-[#00a968]">Mark sent</button>}
             {!active && !(crypto && awaitingProvider) && <span className="text-xs text-[#315c72]">{crypto && status === "completed" ? (typeof row.meta?.transaction_hash === "string" ? `Tx: ${row.meta.transaction_hash}` : "Transfer recorded") : "?"}</span>}
           </div>
