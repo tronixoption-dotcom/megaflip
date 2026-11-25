@@ -156,6 +156,7 @@ function AuthPage() {
               </Field>
             )}
             {mode === "signup" && (
+              <>
               <Field label="Country">
                 <select value={country} onChange={(e) => setCountry(e.target.value)} className="auth-input">
                   {COUNTRIES.map((item) => <option key={item.code} value={item.code}>{item.name} (+{item.dial})</option>)}
@@ -172,6 +173,7 @@ function AuthPage() {
                   className="auth-input"
                 />
               </Field>
+              </>
             )}
             <Field label="Email">
               <input
