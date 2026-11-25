@@ -53,6 +53,7 @@ export const createDeposit = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => MoneyInput.parse(d))
   .handler(async ({ data, context }) => {
+    await assertKenyanWallet(context.userId);
     const settings = await readSystemSettings();
     const phone = data.method === "mpesa" ? await getProfilePhone(context.userId) : data.phone;
     validateMoney("deposit", data.method, data.amount, phone, settings);
@@ -171,6 +172,7 @@ export const createWithdrawal = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => MoneyInput.parse(d))
   .handler(async ({ data, context }) => {
+    await assertKenyanWallet(context.userId);
     if (data.account === "demo") {
       throw new Error("Demo funds cannot be withdrawn. Switch to your real account to withdraw.");
     }
@@ -781,6 +783,12 @@ function toUsd(amount: number, currency: "KSH" | "USD") {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+async function assertKenyanWallet(userId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin.from("profiles").select("country").eq("id", userId).maybeSingle();
+  if (data?.country !== "KE") throw new Error("M-Pesa is available only to customers registered in Kenya.");
 }
 
 function normalizeKenyanPhone(phone?: string) {

@@ -50,6 +50,7 @@ interface Tx {
 
 type ProfileWithPhone = {
   phone?: string | null;
+  country?: string | null;
 };
 
 function WalletPage() {
@@ -81,6 +82,8 @@ function WalletPage() {
   const isDemoWithdrawal = tab === "withdraw" && activeAccount === "demo";
   const profilePhone = (profile as ProfileWithPhone | undefined)?.phone;
   const mpesaPhone = typeof profilePhone === "string" ? profilePhone : "";
+  const canUseMpesa = (profile as ProfileWithPhone | undefined)?.country === "KE";
+  useEffect(() => { if (!canUseMpesa) setMethod("crypto"); }, [canUseMpesa]);
 
   const loadHistory = useCallback(async () => {
     const { data } = await supabase
@@ -344,7 +347,7 @@ function WalletPage() {
       {(tab === "deposit" || tab === "withdraw") && (
         <>
           <div className="grid grid-cols-2 gap-2">
-            {(["mpesa", "crypto"] as const).map((value) => (
+            {(canUseMpesa ? (["mpesa", "crypto"] as const) : (["crypto"] as const)).map((value) => (
               <button
                 key={value}
                 type="button"

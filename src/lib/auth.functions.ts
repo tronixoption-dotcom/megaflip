@@ -6,6 +6,7 @@ const SignUpInput = z.object({
   password: z.string().min(8),
   fullName: z.string().min(2).max(120),
   phone: z.string().min(9).max(16),
+  country: z.string().length(2),
   referralCode: z.string().max(16).optional(),
 });
 
@@ -116,7 +117,7 @@ export const signUpWithoutEmailVerification = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const username = data.fullName.trim().split(/\s+/)[0] || data.email.split("@")[0];
-    const phone = normalizeKenyanPhone(data.phone);
+    const phone = normalizeInternationalPhone(data.phone, data.country);
 
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
@@ -126,6 +127,7 @@ export const signUpWithoutEmailVerification = createServerFn({ method: "POST" })
         full_name: data.fullName.trim(),
         username,
         phone,
+        country: data.country,
       },
     });
     if (error) throw error;
@@ -137,6 +139,7 @@ export const signUpWithoutEmailVerification = createServerFn({ method: "POST" })
       username,
       full_name: data.fullName.trim(),
       phone,
+      country: data.country,
       demo_balance_usd: 10000,
       active_account: "real",
     });
@@ -189,4 +192,14 @@ function normalizeKenyanPhone(phone: string) {
   if (digits.startsWith("0") && digits.length === 10) return `254${digits.slice(1)}`;
   if (digits.length === 9) return `254${digits}`;
   throw new Error("Enter a valid Kenyan Safaricom number");
+}
+
+function normalizeInternationalPhone(phone: string, country: string) {
+  const dials: Record<string, string> = { KE:"254", UG:"256", TZ:"255", RW:"250", ET:"251", NG:"234", GH:"233", ZA:"27", US:"1", GB:"44", IN:"91", CA:"1", AU:"61", AE:"971", ZM:"260", MW:"265" };
+  const dial = dials[country];
+  const digits = phone.replace(/\D/g, "");
+  if (!dial) throw new Error("Select a supported country");
+  const normalized = digits.startsWith(dial) ? digits : digits.startsWith("0") ? dial + digits.slice(1) : dial + digits;
+  if (normalized.length < dial.length + 7 || normalized.length > dial.length + 12) throw new Error("Enter a valid phone number for the selected country");
+  return `+${normalized}`;
 }
