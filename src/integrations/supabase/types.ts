@@ -77,6 +77,7 @@ export type Database = {
           balance_ksh: number;
           balance_usd: number;
           created_at: string;
+          country: string;
           demo_balance_usd: number;
           email: string | null;
           full_name: string | null;
@@ -90,6 +91,7 @@ export type Database = {
           balance_ksh?: number;
           balance_usd?: number;
           created_at?: string;
+          country?: string;
           demo_balance_usd?: number;
           email?: string | null;
           full_name?: string | null;
@@ -103,6 +105,7 @@ export type Database = {
           balance_ksh?: number;
           balance_usd?: number;
           created_at?: string;
+          country?: string;
           demo_balance_usd?: number;
           email?: string | null;
           full_name?: string | null;
